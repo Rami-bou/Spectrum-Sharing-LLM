@@ -88,10 +88,10 @@ for j in range(len(test)):
     resp = structured_demand.invoke([
       SystemMessage(content=prompt),
       HumanMessage(
-          content=f'If A is {hpp_val}, {h_val_for_sinr_denominator}, {hps_val}, {hss_val} then B is'
+          content=f'If A is {hpp_val}, {hsp_val}, {hps_val}, {hss_val} then B is'
       )
     ])
-    text = resp["choices"][0]["text"].strip()
+    # text = resp["choices"][0]["text"].strip()
     
     try:
         Ps_pred = float(resp.predict)

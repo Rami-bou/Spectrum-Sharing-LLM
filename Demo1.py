@@ -63,11 +63,14 @@ for i in range(1000):
     hps_normal = int(round(((np.log(hps) - (-16.2)) / 1.8 * 10)))
     hss_normal = int(round(((np.log(hss) - (-16.2)) / 1.8 * 10)))
 
-    exact_P2 = ((P1 * hpp) / target - N0_watts) / hsp
+    for j in range(100):
+        SE = np.log2((P1 * hpp) / (N0_watts + hsp * j))
+        if SE >= target_SE1:
+            best_P2 = j
+        else:
+            break
     
-    best_P2 = max(0.0, exact_P2)
-    
-    best_P2_rounded = round(round(best_P2, 4)*100)
+    best_P2_rounded = best_P2
 
     normal_samples.append([hpp_normal, hsp_normal, hps_normal, hss_normal, best_P2_rounded])
     all_good_samples.append([hpp, hsp, hps, hss, best_P2])
@@ -120,14 +123,14 @@ for sample in h_testing:
 
     # 4. Evaluate QoS Constraint
     if SE1_pred >= target_SE1:
-        print(f"Channels: {current_channels} -> Predicted P2 = {P2_pred:<6} (SE1 = {SE1_pred:.2f}) True P2 = {P2_true:<6}")
+        print(f"Channels: {current_channels} -> Predicted P2 = {P2_pred:<6} GOOD (SE1 = {SE1_pred:.2f}) True P2 = {P2_true:<6}")
 
         # Calculate Secondary Spectral Efficiencies using consistent math
-        SE2_pred = np.log2((P2_pred * hss) / (N0_watts + hps * P1))
-        SE2_true = np.log2((P2_true * hss) / (N0_watts + hps * P1))
+        # SE2_pred = np.log2((P2_pred * hss) / (N0_watts + hps * P1))
+        # SE2_true = np.log2((P2_true * hss) / (N0_watts + hps * P1))
 
-        results_SE2_pred.append(SE2_pred)
-        results_SE2_true.append(SE2_true)
+        # results_SE2_pred.append(SE2_pred)
+        # results_SE2_true.append(SE2_true)
 
     else:
-        print(f"Channels: {current_channels} -> Predicted P2 = {P2_pred:<6}  (SE1 = {SE1_pred:.2f} < {target_SE1})")
+        print(f"Channels: {current_channels} -> Predicted P2 = {P2_pred:<6} BAD (SE1 = {SE1_pred:.2f} < {target_SE1})")
