@@ -94,7 +94,7 @@ class GraphState(TypedDict):
     hss: int
 
     caused_interference: int
-
+    delta_hist: list[int]
     iteration: int
     max_iter: int
 
@@ -131,10 +131,10 @@ def primary(state: GraphState) -> GraphState:
 
     Follow these exact bands based on the Gap:
     1. Gap > 900: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=VERY_HIGH. Tell secondary in the critique to cut P2 by roughly 30 to 60 units.
-    2. 100 <= Gap <= 900: too much interference. decision=REJECT, action=DECREASE, severity=HIGH. Tell secondary to reduce P2 by roughly 10 to 25 units.
-    3. -100 < Gap < 100: close enough to the threshold on either side. decision=ACCEPT, severity=ACCEPTABLE. No correction needed.
-    4. -400 <= Gap <= -100: well under the threshold, wasting power budget. decision=REJECT, action=INCREASE, severity=HIGH. Tell secondary to raise P2 by roughly 10 to 25 units.
-    5. Gap < -400: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=VERY_HIGH. Tell secondary to raise P2 by roughly 30 to 60 units.
+    2. 200 <= Gap <= 900: too much interference. decision=REJECT, action=DECREASE, severity=HIGH. Tell secondary to reduce P2 by roughly 10 to 25 units.
+    3. Gap < -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=VERY_HIGH. Tell secondary to raise P2 by roughly 30 to 60 units.
+    4. Otherwise (Gap between -500 and 200) you ACCEPT.
+    5. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
 
     Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
 
@@ -149,6 +149,7 @@ def primary(state: GraphState) -> GraphState:
         Caused interference: {state['caused_interference']}
         Threshold: {I_max}
         Gap (caused_interference - threshold): {gap}
+        History of caused interference: {state['interference_history']}
         """)
     ])
 
@@ -163,7 +164,6 @@ def primary(state: GraphState) -> GraphState:
     print("###################################################################################################\n")
 
     return state
-
 
 def secondary(state: GraphState) -> GraphState:
     print("######################Secondary Node working... Iteration", state['iteration'], "######################\n")
@@ -180,7 +180,8 @@ def secondary(state: GraphState) -> GraphState:
     1. The sign of your delta must match the action (INCREASE -> positive delta, DECREASE -> negative delta).
     2. Stay within the step range for the given severity, unless the history below shows you are already very close to the threshold {I_max} - in that case use a smaller delta near the low end of the range, or below it, to avoid overshooting.
     3. Use the P2 history and interference history to judge how close you are getting to the threshold round over round, and moderate your delta accordingly - do not keep proposing large deltas once the interference is clearly converging near the threshold.
-
+    4. Check the proposed delta history before you propose one, so you don't repeat the same delta each time.
+    
     Return JSON matching the schema.
     """
 
@@ -194,12 +195,15 @@ def secondary(state: GraphState) -> GraphState:
         Allocation power history: {state['allocation_history']}
         Corresponding interference: {state['interference_history']}
 
+        Proposed delta history: {state['delta_hist']}
+
         Primary critique: {state["primary_critique"]}
         Severity: {state['primary_severity']}
         Action requested: {state['primary_action']}
         """)
     ])
 
+    state['delta_hist'].append(resp.delta)
     P2_new = int(max(1, min(100, state['P2'] + resp.delta)))
     state['P2'] = P2_new
     state['allocation_history'].append(P2_new)
@@ -258,7 +262,6 @@ pred_of_sec = []
 within_10 = 0
 Not_within_10 = 0
 cause_interference = 0
-# Ensure data is generated fresh
 data.clear()
 repeated.clear()
 ch = gen_channels(1000)
@@ -277,6 +280,7 @@ for hpp, hsp, hps, hss, analytical_best_p2 in ch:
       "hsp": hsp,
       "hss": hss,
       "caused_interference": 0,
+      "delta_hist": [],
       "iteration": 0,
       "max_iter": 5,
       "primary_critique": "",
