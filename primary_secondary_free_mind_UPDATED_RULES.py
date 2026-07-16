@@ -81,7 +81,8 @@ def gen_channels(length):
 
   return data
 
-llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
+llm_primary = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
+llm_secondary = ChatOllama(model=" deepseek-r1:14b", temperature=0.0)
 
 class GraphState(TypedDict):
     P1: int
@@ -141,7 +142,7 @@ def primary(state: GraphState) -> GraphState:
     Return JSON matching the schema.
     """
 
-    structured_critic = llm.with_structured_output(PrimaryOutput)
+    structured_critic = llm_primary.with_structured_output(PrimaryOutput)
     resp = structured_critic.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"""
@@ -181,11 +182,11 @@ def secondary(state: GraphState) -> GraphState:
     2. Stay within the step range for the given severity, unless the history below shows you are already very close to the threshold {I_max} - in that case use a smaller delta near the low end of the range, or below it, to avoid overshooting.
     3. Use the P2 history and interference history to judge how close you are getting to the threshold round over round, and moderate your delta accordingly - do not keep proposing large deltas once the interference is clearly converging near the threshold.
     4. Check the proposed delta history before you propose one, so you don't repeat the same delta each time.
-    
+
     Return JSON matching the schema.
     """
 
-    structured_critic = llm.with_structured_output(SecondaryOutput)
+    structured_critic = llm_secondary.with_structured_output(SecondaryOutput)
     resp = structured_critic.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"""
