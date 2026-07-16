@@ -123,7 +123,7 @@ class SecondaryRemainRounds(BaseModel):
 
 
 def primary(state: GraphState) -> GraphState:
-    print("###################### Primary Node working...Iteration ", state['iteration'], "######################", "\n")
+    print("Primary Node working...Iteration ", state['iteration'], "\n")
 
     state['caused_interference'] = state['P2'] * state['hsp']
     state['interference_history'].append(state['caused_interference'])
@@ -139,8 +139,8 @@ def primary(state: GraphState) -> GraphState:
     2. 500 <= Gap <= 1050: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
     3. 10 <= Gap <= 499: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
     4. Gap <= -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=HIGH.
-    5. 0 < Gap <= 9: Slightly above threshold, but acceptable. decision=ACCEPT, severity=ACCEPTABLE.
-    6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT, severity=ACCEPTABLE.
+    5. 0 < Gap <= 9: Slightly above threshold, but acceptable. decision=ACCEPT.
+    6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT.
     7. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
 
     Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
@@ -167,8 +167,9 @@ def primary(state: GraphState) -> GraphState:
     state['primary_severity'] = resp.severity
     state['iteration'] += 1
 
-    print(f"Primary user {resp.decision} ({resp.severity}), P2 {state['P2']} caused {state['caused_interference']} (Gap {gap})")
     print(f"[Primary Reasoning]: {resp.reasoning}")
+    print()
+    print(f"Primary user {resp.decision} ({resp.severity}), P2 {state['P2']} caused {state['caused_interference']} (Gap {gap})")
 
     return state
 
@@ -250,8 +251,9 @@ def secondary(state: GraphState) -> GraphState:
         state['P2'] = P2_new
         state['allocation_history'].append(P2_new)
 
-        print(f"Secondary proposes step {resp.step:+d} -> new P2 {P2_new}")
         print(f"[Secondary Reasoning]: {resp.reasoning}")
+        print()
+        print(f"Secondary proposes step {resp.step:+d} -> new P2 {P2_new}")
 
     return state
 
@@ -259,13 +261,11 @@ def secondary(state: GraphState) -> GraphState:
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
   print("Finalizer...\n")
   if state["iteration"] > state["max_iter"]:
-    print(f"[Finalizer] Round budget ({state['max_iter']}) used up, last decision was {state['primary_decision']} -> finalize (fail if still REJECT).")
     return "finalize"
 
   if state['primary_decision'] == "REJECT":
     return "revise"
 
-  print("[Finalizer] Primary ACCEPTED -> finalize.")
   return "finalize"
 
 
@@ -275,8 +275,8 @@ workflow.add_node("Primary", primary)
 workflow.add_node("Secondary", secondary)
 
 workflow.set_entry_point("Secondary")
-
 workflow.add_edge("Secondary", "Primary")
+
 workflow.add_conditional_edges(
     "Primary",
     finalizer,
