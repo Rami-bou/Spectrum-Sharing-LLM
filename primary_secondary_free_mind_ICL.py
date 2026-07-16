@@ -185,19 +185,11 @@ def build_train_prompt(train_examples) -> str:
 
     return prompt_s
 
-
-SEVERITY_STEP_TABLE = """
-Severity-to-step-size guide (same bands the primary user uses):
-- HIGH: step magnitude roughly 30 to 60
-- MEDIUM: step magnitude roughly 15 to 30
-- LOW: step magnitude roughly 3 to 15
-"""
-
 def secondary(state: GraphState) -> GraphState:
     print("Secondary Node working... Iteration", state['iteration'], "\n")
 
     if not state['primary_critique']:
-        prompt = TRAIN_PROMPT
+        prompt = prmpt_train
         schema = SecondaryFirstRound
         structured_critic = llm.with_structured_output(schema)
         resp = structured_critic.invoke([
@@ -224,7 +216,12 @@ def secondary(state: GraphState) -> GraphState:
         You add or substract depends on the action received from primary user.
         You decide the step based on the P2 history and the corresponding caused interference, and you related them with the severity, so you can know whether we are far or near to the best P2.
         The sing of the step (+ or -) depends on the action received as well.
-        {SEVERITY_STEP_TABLE}
+        
+        Severity-to-step-size guide (same bands the primary user uses):
+        - HIGH: step magnitude roughly 20 to 30
+        - MEDIUM: step magnitude roughly 10 to 20
+        - LOW: step magnitude roughly 1 to 10
+
         Do not repeat the exact same step as your last one if the situation (gap/severity) has changed - check your own step history below.
 
         Return JSON matching the schema.
@@ -314,7 +311,7 @@ ch = gen_channels(1000)
 train_examples = ch[0:100]
 ch = ch[200:250]
 
-TRAIN_PROMPT = build_train_prompt(train_examples)
+prmpt_train = build_train_prompt(train_examples)
 
 print("\n--- Starting LLM Negotiation ---")
 

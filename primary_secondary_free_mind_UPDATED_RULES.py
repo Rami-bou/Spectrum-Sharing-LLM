@@ -81,8 +81,13 @@ def gen_channels(length):
 
   return data
 
+<<<<<<< HEAD
 llm_primary = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 llm_secondary = ChatOllama(model="deepseek-r1:14b", temperature=0.0)
+=======
+llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
+# llm_secondary = ChatOllama(model="deepseek-r1:14b", temperature=0.0)
+>>>>>>> 10b5610 (Good)
 
 class GraphState(TypedDict):
     P1: int
@@ -119,7 +124,7 @@ class SecondaryOutput(BaseModel):
 
 
 def primary(state: GraphState) -> GraphState:
-    print("######################\Primary Node working...Iteration ", state['iteration'], "######################\\n")
+    print("###################### Primary Node working...Iteration ", state['iteration'], "######################", "\n")
 
     state['caused_interference'] = state['P2'] * state['hsp']
     state['interference_history'].append(state['caused_interference'])
@@ -131,19 +136,29 @@ def primary(state: GraphState) -> GraphState:
     The Gap is defined as: Gap = caused_interference - {I_max}. A positive Gap means the secondary is causing too much interference. A negative Gap means the secondary is well under the threshold and wasting power budget.
 
     Follow these exact bands based on the Gap:
+<<<<<<< HEAD
     1. Gap > 900: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
     2. 500 <= Gap <= 900: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
     3. 10 <= Gap <= 400: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
     4. Gap < -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=VERY_HIGH.
     5. Otherwise you ACCEPT.
     6. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
+=======
+    1. Gap > 1050: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. 500 <= Gap <= 900: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. 10 <= Gap <= 400: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
+    4. -900 <= Gap <= -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=HIGH.
+    5. 0 < Gap <= 9: Slightly above threshold, but acceptable. decision=ACCEPT.
+    6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT.
+    7. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
+>>>>>>> 10b5610 (Good)
 
     Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
 
     Return JSON matching the schema.
     """
 
-    structured_critic = llm_primary.with_structured_output(PrimaryOutput)
+    structured_critic = llm.with_structured_output(PrimaryOutput)
     resp = structured_critic.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"""
@@ -152,7 +167,8 @@ def primary(state: GraphState) -> GraphState:
         Threshold: {I_max}
         Gap (caused_interference - threshold): {gap}
         History of caused interference: {state['interference_history']}
-        """)
+        """
+        )
     ])
 
     state['primary_critique'] = resp.critique
@@ -173,21 +189,26 @@ def secondary(state: GraphState) -> GraphState:
     prompt = f"""You are a secondary user in a wireless communication environment.
     Your job is to propose a new power allocation for yourself (values must stay between 1 and 100), based on feedback from the primary user.
 
+<<<<<<< HEAD
     Use this severity-to-step-range table (the primary user follows the same one) to size your delta:
     - severity HIGH: delta magnitude roughly 40 to 60
     - severity MEDIUM: delta magnitude roughly 20 to 30
     - severity LOW: delta magnitude roughly 10 to 18
+=======
+    The delta values are from 1 to 100, you select a value then you chANge it based on the severity level (high severity imply high delta).
+>>>>>>> 10b5610 (Good)
 
     Rules:
     1. The sign of your delta must match the action (INCREASE -> positive delta, DECREASE -> negative delta).
     2. Stay within the step range for the given severity, unless the history below shows you are already very close to the threshold {I_max} - in that case use a smaller delta near the low end of the range, or below it, to avoid overshooting.
     3. Use the P2 history and interference history to judge how close you are getting to the threshold round over round, and moderate your delta accordingly - do not keep proposing large deltas once the interference is clearly converging near the threshold.
     4. Check the proposed delta history before you propose one, so you don't repeat the same delta each time.
+    5. Delta value should be less then current P2.
 
     Return JSON matching the schema.
     """
 
-    structured_critic = llm_secondary.with_structured_output(SecondaryOutput)
+    structured_critic = llm.with_structured_output(SecondaryOutput)
     resp = structured_critic.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"""
@@ -202,7 +223,8 @@ def secondary(state: GraphState) -> GraphState:
         Primary critique: {state["primary_critique"]}
         Severity: {state['primary_severity']}
         Action requested: {state['primary_action']}
-        """)
+        """
+        )
     ])
 
     state['delta_hist'].append(resp.delta)
