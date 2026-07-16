@@ -82,7 +82,7 @@ def gen_channels(length):
   return data
 
 llm_primary = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
-llm_secondary = ChatOllama(model=" deepseek-r1:14b", temperature=0.0)
+llm_secondary = ChatOllama(model="deepseek-r1:14b", temperature=0.0)
 
 class GraphState(TypedDict):
     P1: int
@@ -131,11 +131,12 @@ def primary(state: GraphState) -> GraphState:
     The Gap is defined as: Gap = caused_interference - {I_max}. A positive Gap means the secondary is causing too much interference. A negative Gap means the secondary is well under the threshold and wasting power budget.
 
     Follow these exact bands based on the Gap:
-    1. Gap > 900: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=VERY_HIGH. Tell secondary in the critique to cut P2 by roughly 30 to 60 units.
-    2. 200 <= Gap <= 900: too much interference. decision=REJECT, action=DECREASE, severity=HIGH. Tell secondary to reduce P2 by roughly 10 to 25 units.
-    3. Gap < -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=VERY_HIGH. Tell secondary to raise P2 by roughly 30 to 60 units.
-    4. Otherwise (Gap between -500 and 200) you ACCEPT.
-    5. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
+    1. Gap > 900: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. 500 <= Gap <= 900: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. 10 <= Gap <= 400: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
+    4. Gap < -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=VERY_HIGH.
+    5. Otherwise you ACCEPT.
+    6. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
 
     Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
 
@@ -173,9 +174,9 @@ def secondary(state: GraphState) -> GraphState:
     Your job is to propose a new power allocation for yourself (values must stay between 1 and 100), based on feedback from the primary user.
 
     Use this severity-to-step-range table (the primary user follows the same one) to size your delta:
-    - severity VERY_HIGH: delta magnitude roughly 30 to 60
-    - severity HIGH: delta magnitude roughly 10 to 25
-    - severity ACCEPTABLE: you should not be called in this case
+    - severity HIGH: delta magnitude roughly 40 to 60
+    - severity MEDIUM: delta magnitude roughly 20 to 30
+    - severity LOW: delta magnitude roughly 10 to 18
 
     Rules:
     1. The sign of your delta must match the action (INCREASE -> positive delta, DECREASE -> negative delta).
@@ -267,7 +268,7 @@ data.clear()
 repeated.clear()
 ch = gen_channels(1000)
 print(ch)
-ch = ch[200:250]
+ch = ch[200:201]
 
 print("\n--- Starting LLM Negotiation ---")
 
