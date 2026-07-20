@@ -368,6 +368,7 @@ print(f'\nMean Error: {mean_error/len(ch):.2f}')
 print(f"Prediction within +10 and -10: {within_10/len(ch):.2%}")
 print(f"Prediction outside +10 and -10: {Not_within_10/len(ch):.2%}")
 print(f"Cause interference: {cause_interference/len(ch):.2%}")
+
 fig, ax1 = plt.subplots(1, figsize=(15, 6))
 ax1.plot(actual_SE, color='red', label='Actual SE', marker='o', linestyle='None')
 ax1.plot(predicted_SE, color='blue', label='Predicted SE', marker='x', linestyle='None')
