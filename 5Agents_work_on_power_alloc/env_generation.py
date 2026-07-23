@@ -84,7 +84,6 @@ def gen_channels(length):
 
             sinr = signal / (1.0 + interference)
             se = np.log2(1 + sinr)
-            print(f'SE: {se}')
             if 1.0 <= se <= 5.0:
                 data.append([H[i][0], H[i][1], H[i][2], H[i][3], H[i][4], P[i]])
 
@@ -299,50 +298,108 @@ def make_receiver(agent_id: int):
         return critique(state)
     return node
 
+def start_node(state: GraphState) -> GraphState:
+    print(f"\n[Start Node] Dispatching Iteration {state['iteration']}...")
+    return state
+
 workflow = StateGraph(GraphState)
+
+workflow.add_node("Start", start_node)
 for i in range(5):
     workflow.add_node(f"Proposer_{i+1}", make_proposer(i))
     workflow.add_node(f"Receiver_{i+1}", make_receiver(i))
 
 workflow.add_node("Aggregator", aggregator)
 
-# Flow Execution: START -> Proposer_1 -> ... -> Proposer_5 -> Receiver_1 -> ... -> Receiver_5 -> Aggregator
-workflow.add_edge(START, "Proposer_1")
-workflow.add_edge("Proposer_1", "Proposer_2")
-workflow.add_edge("Proposer_2", "Proposer_3")
-workflow.add_edge("Proposer_3", "Proposer_4")
-workflow.add_edge("Proposer_4", "Proposer_5")
+# Entry point fans out through Start
+workflow.add_edge(START, "Start")
+workflow.add_edge("Start", "Proposer_1")
+workflow.add_edge("Start", "Proposer_2")
+workflow.add_edge("Start", "Proposer_3")
+workflow.add_edge("Start", "Proposer_4")
+workflow.add_edge("Start", "Proposer_5")
 
-workflow.add_edge("Proposer_5", "Receiver_1")
-workflow.add_edge("Receiver_1", "Receiver_2")
-workflow.add_edge("Receiver_2", "Receiver_3")
-workflow.add_edge("Receiver_3", "Receiver_4")
-workflow.add_edge("Receiver_4", "Receiver_5")
+workflow.add_edge("Proposer_1", "Receiver_1")
+workflow.add_edge("Proposer_2", "Receiver_2")
+workflow.add_edge("Proposer_3", "Receiver_3")
+workflow.add_edge("Proposer_4", "Receiver_4")
+workflow.add_edge("Proposer_5", "Receiver_5")
 
+workflow.add_edge("Receiver_1", "Aggregator")
+workflow.add_edge("Receiver_2", "Aggregator")
+workflow.add_edge("Receiver_3", "Aggregator")
+workflow.add_edge("Receiver_4", "Aggregator")
 workflow.add_edge("Receiver_5", "Aggregator")
 
-# Loop or End condition
+# On "revise", loop back through Start so ALL 5 proposer branches
+# re-fire in parallel again — not just Proposer_1
 workflow.add_conditional_edges(
     "Aggregator",
     finalizer,
     {
-        "revise": "Proposer_1",
+        "revise": "Start",
         "finalize": END,
     }
 )
 
 app = workflow.compile()
 
+try:
+    from IPython.display import Image, display
+    display(Image(app.get_graph().draw_mermaid_png()))
+except Exception as e:
+    print("Graph visualization skipped:", e)
+
+import numpy as np
+import random
+
+def build_train_prompt(train_examples) -> str:
+    prompt_s = """You are an individual Transmitter agent in a wireless network.
+    Your goal is to choose your optimal transmit power (between 1 and 100) based on your row of channel gains.
+
+    Examples of good power allocations:
+    """
+    for data_sample in train_examples:
+        # Extract channel row (first 5 elements) and matching best power (last element)
+        channel_row = data_sample[:5]
+        best_power = data_sample[5]
+        prompt_s += f"If your channel row is {list(channel_row)}, then your best Power is {best_power}\n"
+
+    prompt_s += "\nReturn JSON matching the schema."
+    return prompt_s
+
+def _get_single_H_matrix():
+    # This logic is adapted from the gen_channels function
+    # to generate a single 5x5 H matrix for initial state.
+    H_matrix_local = []
+    for i in range(5):
+        row = []
+        for j in range(5):
+            tx = [random.uniform(0, 30), random.uniform(0, 50)]
+            rx = [random.uniform(31, 60), random.uniform(0, 50)]
+            d = np.sqrt((tx[0]-rx[0])**2 + (tx[1]-rx[1])**2)
+            h = (wave / (4 * np.pi * d))**2
+            h_normal = int(round(h * scale_factor))
+            row.append(h_normal)
+        H_matrix_local.append(row)
+
+    H_matrix_local = np.array(H_matrix_local)
+
+    for i in range(5):
+        H_matrix_local[i][i] += 100
+    return H_matrix_local.tolist() # Convert to list of lists for GraphState type hint
+
 sample_data = gen_channels(100)
 train = sample_data[:80]
-test = sample_data[80:]
+test = sample_data[80:81]
 prmpt_train = build_train_prompt(test)
 
-test_H = test[0][0]
+# Correctly generate a 5x5 matrix for initial_state['H_matrix']
+test_H_matrix = _get_single_H_matrix()
 
 initial_state = {
     "agent_id": 0,
-    "H_matrix": test_H,
+    "H_matrix": test_H_matrix,
     "powers": [50, 50, 50, 50, 50],
     "allocation_history": [],
     "interference_history": [],
