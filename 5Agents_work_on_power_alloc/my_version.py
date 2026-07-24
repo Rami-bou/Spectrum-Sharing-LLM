@@ -46,32 +46,51 @@ def gen_channels(length):
             for j in range(5):
                 tx = [random.uniform(0, 30), random.uniform(0, 50)]
                 rx = [random.uniform(31, 60), random.uniform(0, 50)]
-                d = np.sqrt((tx[0]-rx[0])**2 + (tx[1]-rx[1])**2)
+                d = np.sqrt((tx[0] - rx[0])**2 + (tx[1] - rx[1])**2)
                 h = (wave / (4 * np.pi * d))**2
                 h_normal = int(round(h * scale_factor))
                 row.append(h_normal)
-
-            allowed_p2 = I_max / np.sum(row) - row[i]
-            best_P2 = int(round(min(allowed_p2, P_max), 2))
-            se = np.log2(1+(P1*row[i]/(1+best_P2*row[j] for j in range(5) if i != j)))
-            if 2.0 <= se <= 5.0:
-                row.append(best_P2
             H.append(row)
 
-        H = np.array(H)
+        # Add self-gain boost on diagonal
         for i in range(5):
             H[i][i] += 100
 
-        dataset.append(H.tolist())
+        # Derive target powers and verify Spectral Efficiency (SE)
+        target_powers = []
+        valid_sample = True
+        
+        for i in range(5):
+            interf_gain = sum(H[i][j] for j in range(5) if j != i)
+            allowed_p = I_max / interf_gain if interf_gain > 0 else P_max
+            best_P = int(round(min(allowed_p, P_max)))
+            best_P = max(1, best_P)
+            
+            # Interference received at Rx i from other Tx j
+            interf_received = sum(best_P * H[j][i] for j in range(5) if j != i)
+            se = np.log2(1 + (best_P * H[i][i] / (1 + interf_received)))
+            
+            if not (0.5 <= se <= 8.0):
+                valid_sample = False
+                break
+                
+            target_powers.append(best_P)
+
+        if valid_sample:
+            dataset.append((H, target_powers))
 
     random.shuffle(dataset)
-    return dataset
-    
+    return dataset 
+
 # prevent course condition, so the agents don't write on the same variable on th same time
-def merge_dict(current: dict, update: dict) -> dict:
-    merged = dict(current) if current else {}
-    merged.update(update)
-    return merged
+def merge_dict(existing: dict, update: dict) -> dict:
+    if not isinstance(existing, dict):
+        existing = {}
+    if isinstance(update, dict):
+        merged = existing.copy()
+        merged.update(update)
+        return merged
+    return existing
 
 def merge_steps(current: dict, update: dict) -> dict:
     merged = {k: list(v) for k, v in (current or {}).items()}
@@ -79,21 +98,21 @@ def merge_steps(current: dict, update: dict) -> dict:
         merged.setdefault(agent_id, []).append(step)
     return merged
 class GraphState(TypedDict):
+    agent_id: int
     H_matrix: List[List[int]]
+    
+    powers: Annotated[dict, merge_dict]
+    individual_critiques: Annotated[dict, merge_dict]
+    decisions: Annotated[dict, merge_dict]
+    accepted_agents: Annotated[dict, merge_dict]
+    final_allocation: Annotated[dict, merge_dict]
+    steps_history: Annotated[dict, merge_dict]
 
-    powers: Annotated[Dict[int, int], merge_dict]
-    individual_critiques: Annotated[Dict[int, dict], merge_dict]
-    decisions: Annotated[Dict[int, str], merge_dict]
-    final_allocation: Annotated[Dict[int, int], merge_dict]
-    steps_history: Annotated[Dict[int, List[int]], merge_steps]
-
-    allocation_history: List[List[int]]
-    interference_history: List[List[int]]
-    delta_hist: List[List[int]]
+    allocation_history: Annotated[list, operator.add]
+    interference_history: Annotated[list, operator.add]
 
     iteration: int
     max_iter: int
-
     aggregated_critique: str
 
 
@@ -118,28 +137,17 @@ class AggregatorOutput(BaseModel):
     reasoning: str = Field(description="Brief summary of overall network state.")
     aggregated_critique: str = Field(description="Actionable summary telling Tx1-Tx5 who should increase or decrease power.")
 
-def build_train_prompt(train_matrices) -> str:
-    """
-    gen_channels() returns raw 5x5 matrices only (no precomputed 'best power'
-    label anymore). We derive a quick heuristic suggestion per row here just
-    for few-shot prompting: lower power when a transmitter's total outgoing
-    gain to the other 4 receivers is high. Capped to num_examples rows so the
-    prompt doesn't balloon on a local 14B model's context.
-    """
+def build_train_prompt(train_samples) -> str:
     prompt_s = """You are an individual Transmitter agent in a wireless network.
     Your goal is to choose your optimal transmit power (between 1 and 100) based on your row of channel gains.
 
     Examples of good power allocations:
     """
-    h = train_matrices[:4]
-    p = train_matrices[4]
-    for H_matrix in h:
+    for H_matrix, target_powers in train_samples[:5]:
         for i in range(5):
             row = H_matrix[i]
-            self_gain = row[i]
-            # interf_caused = sum(row) - self_gain
-            # suggested_p = P_max if interf_caused <= 0 else min(P_max, I_max / interf_caused)
-            prompt_s += f"If your channel row is {row}, then a reasonable Power is {int(round(p))}\n"
+            best_p = target_powers[i]
+            prompt_s += f"If your channel row is {row}, then a reasonable Power is {best_p}\n"
 
     prompt_s += "\nReturn JSON matching the schema."
     return prompt_s
@@ -148,7 +156,7 @@ def allocation(state: GraphState, agent_id: int) -> dict:
     if agent_id in state['final_allocation']:
         print(f"[Proposer {agent_id + 1}] Already locked at {state['final_allocation'][agent_id]}, skipping.")
         return {}
-
+    agent_id = state['agent_id']
     print(f"[Proposer {agent_id + 1}] Working on Iteration {state['iteration']}...")
 
     H = state['H_matrix']
@@ -194,7 +202,10 @@ def allocation(state: GraphState, agent_id: int) -> dict:
         step = resp.steps
         new_p = int(max(1, min(100, temp_P + step)))
         print(f"  -> Tx {agent_id + 1} Step: {step:+d} | New Power: {new_p}")
-        return {"powers": {agent_id: new_p}, "steps_history": {agent_id: step}}
+        return {
+        "powers": {agent_id: new_p},
+        "steps_history": {agent_id: state['steps_history'].get(agent_id, []) + [step]}
+    }
         
 def critique(state: GraphState, agent_id: int) -> dict:
     if agent_id in state['final_allocation']:
@@ -356,26 +367,30 @@ except Exception as e:
 
 sample_data = gen_channels(100)
 train = sample_data[:80]
-test_H_matrix = sample_data[80]
+test = sample_data[80:]
 
 prmpt_train = build_train_prompt(train)
 
-for h in test_H_matrix:
+for test_idx, (test_H_matrix, true_powers) in enumerate(test[:5]):
     initial_state = {
-        "H_matrix": h,
-        "powers": {i: 50 for i in range(5)},
+        "agent_id": 0,
+        "H_matrix": test_H_matrix,                     
+        "powers": [50, 50, 50, 50, 50],                
         "allocation_history": [],
         "interference_history": [],
         "delta_hist": [],
+        "steps_history": [[], [], [], [], []],
         "iteration": 0,
         "max_iter": 3,
-        "individual_critiques": {},
+        "individual_critiques": [{}, {}, {}, {}, {}],
         "aggregated_critique": "",
-        "decisions": {},
-        "final_allocation": {},
-        "steps_history": {},
+        "decisions": ["", "", "", "", ""],
+        "accepted_agents": [False, False, False, False, False],
+        "final_allocation": [0, 0, 0, 0, 0]
     }
 
     output = app.invoke(initial_state)
-    print("Final Powers:", {output['powers'][i] for i in range(5)})
-    print("True Powers:", {test_H_matrix[i][4] for i in range(5)})
+
+    print(f"\n==================== TEST SAMPLE {test_idx + 1} ====================")
+    print("Final Output Powers:", output['powers'])
+    print("True Target Powers: ", true_powers)
