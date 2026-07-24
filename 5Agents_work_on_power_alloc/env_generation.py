@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import math
-from typing import List, Literal, Annotated
+from typing import List, Literal
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 
@@ -46,13 +46,13 @@ def gen_channels(length):
 
 # --- Graph State ---
 class GraphState(TypedDict):
-    # Removed agent_id from shared state as it's passed directly to nodes
-    H_matrix: List[List[int]] # Mark H_matrix as read-only for parallel steps
+    agent_id: int
+    H_matrix: List[List[int]]
     powers: List[int]
 
     allocation_history: List[List[int]]
     interference_history: List[List[int]]
-    # Removed delta_hist as it is not used
+    delta_hist: List[List[int]]
     steps_history: List[List[int]]
 
     iteration: int
@@ -105,8 +105,8 @@ def build_train_prompt(train_examples) -> str:
 
 
 # --- Nodes ---
-def allocation(state: GraphState, agent_id: int) -> GraphState:
-    # agent_id is now passed as an argument, no longer fetched from state
+def allocation(state: GraphState) -> GraphState:
+    agent_id = state['agent_id']
 
     # DISABLE/FREEZE: If agent is already accepted, lock its power and skip LLM
     if state['accepted_agents'][agent_id]:
@@ -121,7 +121,7 @@ def allocation(state: GraphState, agent_id: int) -> GraphState:
     temp_H = H[agent_id]
     temp_P = P[agent_id]
 
-    if not state['aggregated_critique']: # Only make an initial proposal if there's no critique yet
+    if not state['aggregated_critique']:
         prompt = prmpt_train
         structured_critic = llm.with_structured_output(ProposersFirstRound)
         resp = structured_critic.invoke([
@@ -163,8 +163,8 @@ def allocation(state: GraphState, agent_id: int) -> GraphState:
     return state
 
 
-def critique(state: GraphState, agent_id: int) -> GraphState:
-    # agent_id is now passed as an argument, no longer fetched from state
+def critique(state: GraphState) -> GraphState:
+    agent_id = state['agent_id']
 
     H = state['H_matrix']
     P = state['powers']
@@ -284,14 +284,14 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
 # --- Node Creator Wrappers ---
 def make_proposer(agent_id: int):
     def node(state: GraphState) -> GraphState:
-        # Pass agent_id directly to allocation, removed state['agent_id'] assignment
-        return allocation(state, agent_id)
+        state['agent_id'] = agent_id
+        return allocation(state)
     return node
 
 def make_receiver(agent_id: int):
     def node(state: GraphState) -> GraphState:
-        # Pass agent_id directly to critique, removed state['agent_id'] assignment
-        return critique(state, agent_id)
+        state['agent_id'] = agent_id
+        return critique(state)
     return node
 
 def start_node(state: GraphState) -> GraphState:
@@ -325,6 +325,7 @@ for i in range(1, 6):
     workflow.add_edge("Middle", f"Receiver_{i}")
     workflow.add_edge(f"Receiver_{i}", "Aggregator")
 
+# Conditional Edge
 workflow.add_conditional_edges(
     "Aggregator",
     finalizer,
@@ -335,28 +336,25 @@ workflow.add_conditional_edges(
 )
 
 app = workflow.compile()
-try:
-    from IPython.display import Image, display
-    display(Image(app.get_graph().draw_mermaid_png()))
-except Exception as e:
-    print("Graph visualization skipped:", e)
 
 
+# --- Execution Example ---
 sample_data = gen_channels(100)
 train = sample_data[:80]
 test = sample_data[80:]
 
 prmpt_train = build_train_prompt(train)
 
-
+# Select one 5x5 matrix for execution
 test_H_matrix = test[0]
 
 initial_state = {
-    # Removed 'agent_id': 0 as it's no longer part of the shared state
+    "agent_id": 0,
     "H_matrix": test_H_matrix,
     "powers": [50, 50, 50, 50, 50],
     "allocation_history": [],
     "interference_history": [],
+    "delta_hist": [],
     "steps_history": [[], [], [], [], []],
     "iteration": 0,
     "max_iter": 4,
