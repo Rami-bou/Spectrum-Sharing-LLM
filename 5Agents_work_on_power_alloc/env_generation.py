@@ -1,54 +1,29 @@
-import matplotlib.pyplot as plt
 import random
 import numpy as np
-from langchain.tools import tool
-from langchain.chat_models import init_chat_model
-from langchain.messages import AnyMessage
-from typing_extensions import TypedDict, Annotated
-import operator
-from langchain.messages import SystemMessage
+import math
+from typing import List, Literal, Annotated
+from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
-import os
-from langsmith import Client
-from typing import List, Dict, Any, Optional, TypedDict, Literal, Tuple
-from pydantic import BaseModel, Field
-from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.graph import StateGraph, START, END
-from langchain.messages import SystemMessage
-from pydantic import BaseModel, Field
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
-from langchain.chat_models import init_chat_model
-import math
-from dotenv import load_dotenv
+from langgraph.graph import StateGraph, START, END
+from langgraph.channels import Noop
 
-#load_dotenv()
-
-#os.environ["LANGCHAIN_TRACING_V2"] = "true"
-#os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
-#os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
-#os.environ["LANGCHAIN_PROJECT"] = "Test Logging"
-
+# --- Environment Setup ---
 f = 2e9
 c = 3e8
 wave = c / f
 P_max = 100.0
-
 I_max = 1000
-P1 = 100
 scale_factor = 1e8
-possible_P2 = []
 
 random.seed(10)
 
-H = []
-P = []
-
 def gen_channels(length):
-    data = []
-    while len(data) < length:
+    dataset = []
+    while len(dataset) < length:
         H = []
-
         for i in range(5):
             row = []
             for j in range(5):
@@ -61,43 +36,25 @@ def gen_channels(length):
             H.append(row)
 
         H = np.array(H)
-
         for i in range(5):
             H[i][i] += 100
 
-        P = []
-        for i in range(5):
-            interf_caused = np.sum(H[i]) - H[i][i]
+        dataset.append(H.tolist())
 
-            if interf_caused > 0:
-                allowed_p = I_max / interf_caused
-            else:
-                allowed_p = P_max
+    random.shuffle(dataset)
+    return dataset
 
-            best_P = int(round(min(allowed_p, P_max)))
-            P.append(best_P)
 
-        for i in range(5):
-            signal = P[i] * H[i][i]
-
-            interference = sum(P[j] * H[j][i] for j in range(5) if j != i)
-
-            sinr = signal / (1.0 + interference)
-            se = np.log2(1 + sinr)
-            if 1.0 <= se <= 5.0:
-                data.append([H[i][0], H[i][1], H[i][2], H[i][3], H[i][4], P[i]])
-
-    random.shuffle(data)
-    return data
-
+# --- Graph State ---
 class GraphState(TypedDict):
-    agent_id: int
-    H_matrix: List[List[int]]
+    # Removed agent_id from shared state as it's passed directly to nodes
+    H_matrix: Annotated[List[List[int]], Noop()] # Mark H_matrix as read-only for parallel steps
     powers: List[int]
 
     allocation_history: List[List[int]]
     interference_history: List[List[int]]
-    delta_hist: List[List[int]]
+    # Removed delta_hist as it is not used
+    steps_history: List[List[int]]
 
     iteration: int
     max_iter: int
@@ -106,8 +63,14 @@ class GraphState(TypedDict):
     aggregated_critique: str
     decisions: List[str]
 
+    accepted_agents: List[bool]   # Tracks which agents are accepted/disabled
+    final_allocation: List[int]  # Stores locked powers for accepted agents
+
+
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 
+
+# --- Pydantic Schemas ---
 class ProposersFirstRound(BaseModel):
     reasoning: str = Field(description="Your brief reasoning for initial power selection.")
     powers: int = Field(description="Your single power allocation value between 1 and 100.")
@@ -127,23 +90,30 @@ class AggregatorOutput(BaseModel):
     reasoning: str = Field(description="Brief summary of overall network state.")
     aggregated_critique: str = Field(description="Actionable summary telling Tx1-Tx5 who should increase or decrease power.")
 
+
+# --- Prompt Builder ---
 def build_train_prompt(train_examples) -> str:
     prompt_s = """You are an individual Transmitter agent in a wireless network.
     Your goal is to choose your optimal transmit power (between 1 and 100) based on your row of channel gains.
 
-    Examples of good power allocations:
+    Examples of channel matrices:
     """
-    for data_sample in train_examples:
-        # Extract row channels and matching best power
-        H_matrix, best_p_array = data_sample
-        for i in range(5):
-            prompt_s += f"If your channel row is {H_matrix[i]}, then your best Power is {best_p_array[i]}\n"
+    for data_sample in train_examples[:5]:
+        prompt_s += f"Sample Matrix: {data_sample}\n"
 
     prompt_s += "\nReturn JSON matching the schema."
     return prompt_s
 
-def allocation(state: GraphState) -> GraphState:
-    agent_id = state['agent_id']
+
+# --- Nodes ---
+def allocation(state: GraphState, agent_id: int) -> GraphState:
+    # agent_id is now passed as an argument, no longer fetched from state
+
+    # DISABLE/FREEZE: If agent is already accepted, lock its power and skip LLM
+    if state['accepted_agents'][agent_id]:
+        print(f"[Proposer {agent_id + 1}] ALREADY ACCEPTED. Power locked at {state['powers'][agent_id]}. Skipping proposal.")
+        return state
+
     print(f"[Proposer {agent_id + 1}] Working on Iteration {state['iteration']}...")
 
     H = state['H_matrix']
@@ -152,7 +122,7 @@ def allocation(state: GraphState) -> GraphState:
     temp_H = H[agent_id]
     temp_P = P[agent_id]
 
-    if not state['aggregated_critique']:
+    if not state['aggregated_critique']: # Only make an initial proposal if there's no critique yet
         prompt = prmpt_train
         structured_critic = llm.with_structured_output(ProposersFirstRound)
         resp = structured_critic.invoke([
@@ -181,34 +151,52 @@ def allocation(state: GraphState) -> GraphState:
             Your Current Power: {temp_P}
             All Transmitters Current Powers: {state['powers']}
             Aggregated Critique: {state['aggregated_critique']}
+            Your Step History: {state['steps_history'][agent_id]}
             """)
         ])
 
         step = resp.steps
+        state['steps_history'][agent_id].append(step)
         new_p = int(max(1, min(100, temp_P + step)))
         state['powers'][agent_id] = new_p
         print(f"  -> Tx {agent_id + 1} Step: {step:+d} | New Power: {new_p}")
 
     return state
 
-def critique(state: GraphState) -> GraphState:
-    agent_id = state['agent_id']
-    print(f"[Receiver {agent_id + 1}] Evaluating Interference...")
+
+def critique(state: GraphState, agent_id: int) -> GraphState:
+    # agent_id is now passed as an argument, no longer fetched from state
 
     H = state['H_matrix']
     P = state['powers']
 
-    # Interference at Rx_agent_id from all Tx_j (j != agent_id)
     interference = sum(P[tx] * H[tx][agent_id] for tx in range(5) if tx != agent_id)
     gap = interference - I_max
+
+    # DISABLE/FREEZE: If agent was already accepted, keep ACCEPT status
+    if state['accepted_agents'][agent_id]:
+        print(f"[Receiver {agent_id + 1}] ALREADY ACCEPTED. Maintaining ACCEPT (Interference: {interference}, Gap: {gap}).")
+        state['decisions'][agent_id] = "ACCEPT"
+        state['individual_critiques'][agent_id] = {
+            "rx_id": agent_id + 1,
+            "interference": interference,
+            "gap": gap,
+            "decision": "ACCEPT",
+            "action": "ACCEPTABLE",
+            "severity": "ACCEPTABLE",
+            "critique": f"Receiver {agent_id + 1} is locked and accepted."
+        }
+        return state
+
+    print(f"[Receiver {agent_id + 1}] Evaluating Interference...")
 
     prompt = f"""You are Receiver {agent_id + 1} in a wireless network.
     You evaluate the interference on your channel against the threshold I_max = {I_max}.
     Gap = interference - {I_max}.
 
     Follow these exact bands based on the Gap:
-    1. Gap > 1050: REJECT, DECREASE, HIGH.
-    2. 500 <= Gap <= 1050: REJECT, DECREASE, MEDIUM.
+    1. Gap > 1000: REJECT, DECREASE, HIGH.
+    2. 500 <= Gap <= 1000: REJECT, DECREASE, MEDIUM.
     3. 10 <= Gap <= 499: REJECT, DECREASE, LOW.
     4. Gap <= -500: REJECT, INCREASE, HIGH.
     5. 0 < Gap <= 9: ACCEPT.
@@ -224,10 +212,11 @@ def critique(state: GraphState) -> GraphState:
         HumanMessage(content=msg)
     ])
 
-    # Ensure array padding
-    while len(state['individual_critiques']) < 5:
-        state['individual_critiques'].append({})
-        state['decisions'].append("")
+    # If accepted, lock agent and store final power
+    if resp.decision == "ACCEPT":
+        state['accepted_agents'][agent_id] = True
+        state['final_allocation'][agent_id] = state['powers'][agent_id]
+        print(f"  *** [Receiver {agent_id + 1}] PROPOSAL ACCEPTED! Locking power at {state['powers'][agent_id]} ***")
 
     state['individual_critiques'][agent_id] = {
         "rx_id": agent_id + 1,
@@ -243,22 +232,24 @@ def critique(state: GraphState) -> GraphState:
     print(f"  -> Rx {agent_id + 1} Decision: {resp.decision} (Interference: {interference}, Gap: {gap})")
     return state
 
+
 def aggregator(state: GraphState) -> GraphState:
     print(f"\n[Aggregator Node] Compiling Reports for Iteration {state['iteration']}...")
 
-    # Record clean snapshots into history
-    current_interferences = [c['interference'] for c in state['individual_critiques']]
+    current_interferences = [c.get('interference', 0) for c in state['individual_critiques']]
     state['interference_history'].append(current_interferences)
     state['allocation_history'].append(list(state['powers']))
 
     prompt = """You are the Critique Aggregator.
     You will read 5 individual feedback critiques from 5 Receivers.
     Your job is to summarize this into ONE actionable paragraph.
-    Tell the 5 Transmitters explicitly who needs to INCREASE or DECREASE their power to help the network reach stability."""
+    Tell the Transmitters explicitly who needs to INCREASE or DECREASE their power to help the network reach stability.
+    Ignore agents that are already ACCEPTED/locked."""
 
     critiques_str = ""
     for i, c in enumerate(state['individual_critiques']):
-        critiques_str += f"Rx {i+1}: Decision={c['decision']}, Action={c['action']}, Severity={c['severity']}, Message={c['critique']}\n"
+        status = "LOCKED" if state['accepted_agents'][i] else "ACTIVE"
+        critiques_str += f"Rx {i+1} [{status}]: Decision={c.get('decision')}, Action={c.get('action')}, Severity={c.get('severity')}, Message={c.get('critique')}\n"
 
     structured_agg = llm.with_structured_output(AggregatorOutput)
     resp = structured_agg.invoke([
@@ -272,67 +263,69 @@ def aggregator(state: GraphState) -> GraphState:
     print(f"Aggregated Insight: {resp.aggregated_critique}\n")
     return state
 
+
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("[Finalizer] Checking convergence...")
     if state["iteration"] >= state["max_iter"]:
         print(" -> Maximum iterations reached. Finalizing.")
         return "finalize"
 
+    if all(state['accepted_agents']):
+        print(" -> All 5 agents ACCEPTED. Network fully converged. Finalizing.")
+        return "finalize"
+
     if "REJECT" in state['decisions']:
-        print(" -> Network not converged (REJECT present). Revising allocations.")
+        print(" -> Network not fully converged (REJECT present). Revising active allocations.")
         return "revise"
 
-    print(" -> Network converged (ALL ACCEPT). Finalizing.")
+    print(" -> Network converged. Finalizing.")
     return "finalize"
 
 
+# --- Node Creator Wrappers ---
 def make_proposer(agent_id: int):
     def node(state: GraphState) -> GraphState:
-        state['agent_id'] = agent_id
-        return allocation(state)
+        # Pass agent_id directly to allocation, removed state['agent_id'] assignment
+        return allocation(state, agent_id)
     return node
 
 def make_receiver(agent_id: int):
     def node(state: GraphState) -> GraphState:
-        state['agent_id'] = agent_id
-        return critique(state)
+        # Pass agent_id directly to critique, removed state['agent_id'] assignment
+        return critique(state, agent_id)
     return node
 
 def start_node(state: GraphState) -> GraphState:
-    print(f"\n[Start Node] Dispatching Iteration {state['iteration']}...")
+    print(f"\n==================== [Iteration {state['iteration']}] ====================")
     return state
 
+def middle_node(state: GraphState) -> GraphState:
+    return state
+
+
+# --- Graph Construction ---
 workflow = StateGraph(GraphState)
 
 workflow.add_node("Start", start_node)
+workflow.add_node("Middle", middle_node)
+
 for i in range(5):
     workflow.add_node(f"Proposer_{i+1}", make_proposer(i))
     workflow.add_node(f"Receiver_{i+1}", make_receiver(i))
 
 workflow.add_node("Aggregator", aggregator)
 
-# Entry point fans out through Start
+# Fan-out: Start -> 5 Parallel Proposers -> Middle
 workflow.add_edge(START, "Start")
-workflow.add_edge("Start", "Proposer_1")
-workflow.add_edge("Start", "Proposer_2")
-workflow.add_edge("Start", "Proposer_3")
-workflow.add_edge("Start", "Proposer_4")
-workflow.add_edge("Start", "Proposer_5")
+for i in range(1, 6):
+    workflow.add_edge("Start", f"Proposer_{i}")
+    workflow.add_edge(f"Proposer_{i}", "Middle")
 
-workflow.add_edge("Proposer_1", "Receiver_1")
-workflow.add_edge("Proposer_2", "Receiver_2")
-workflow.add_edge("Proposer_3", "Receiver_3")
-workflow.add_edge("Proposer_4", "Receiver_4")
-workflow.add_edge("Proposer_5", "Receiver_5")
+# Fan-out: Middle -> 5 Parallel Receivers -> Aggregator
+for i in range(1, 6):
+    workflow.add_edge("Middle", f"Receiver_{i}")
+    workflow.add_edge(f"Receiver_{i}", "Aggregator")
 
-workflow.add_edge("Receiver_1", "Aggregator")
-workflow.add_edge("Receiver_2", "Aggregator")
-workflow.add_edge("Receiver_3", "Aggregator")
-workflow.add_edge("Receiver_4", "Aggregator")
-workflow.add_edge("Receiver_5", "Aggregator")
-
-# On "revise", loop back through Start so ALL 5 proposer branches
-# re-fire in parallel again — not just Proposer_1
 workflow.add_conditional_edges(
     "Aggregator",
     finalizer,
@@ -343,73 +336,41 @@ workflow.add_conditional_edges(
 )
 
 app = workflow.compile()
-
 try:
     from IPython.display import Image, display
     display(Image(app.get_graph().draw_mermaid_png()))
 except Exception as e:
     print("Graph visualization skipped:", e)
 
-import numpy as np
-import random
-
-def build_train_prompt(train_examples) -> str:
-    prompt_s = """You are an individual Transmitter agent in a wireless network.
-    Your goal is to choose your optimal transmit power (between 1 and 100) based on your row of channel gains.
-
-    Examples of good power allocations:
-    """
-    for data_sample in train_examples:
-        # Extract channel row (first 5 elements) and matching best power (last element)
-        channel_row = data_sample[:5]
-        best_power = data_sample[5]
-        prompt_s += f"If your channel row is {list(channel_row)}, then your best Power is {best_power}\n"
-
-    prompt_s += "\nReturn JSON matching the schema."
-    return prompt_s
-
-def _get_single_H_matrix():
-    # This logic is adapted from the gen_channels function
-    # to generate a single 5x5 H matrix for initial state.
-    H_matrix_local = []
-    for i in range(5):
-        row = []
-        for j in range(5):
-            tx = [random.uniform(0, 30), random.uniform(0, 50)]
-            rx = [random.uniform(31, 60), random.uniform(0, 50)]
-            d = np.sqrt((tx[0]-rx[0])**2 + (tx[1]-rx[1])**2)
-            h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor))
-            row.append(h_normal)
-        H_matrix_local.append(row)
-
-    H_matrix_local = np.array(H_matrix_local)
-
-    for i in range(5):
-        H_matrix_local[i][i] += 100
-    return H_matrix_local.tolist() # Convert to list of lists for GraphState type hint
 
 sample_data = gen_channels(100)
 train = sample_data[:80]
-test = sample_data[80:81]
-prmpt_train = build_train_prompt(test)
+test = sample_data[80:]
 
-# Correctly generate a 5x5 matrix for initial_state['H_matrix']
-test_H_matrix = _get_single_H_matrix()
+prmpt_train = build_train_prompt(train)
+
+
+test_H_matrix = test[0]
 
 initial_state = {
-    "agent_id": 0,
+    # Removed 'agent_id': 0 as it's no longer part of the shared state
     "H_matrix": test_H_matrix,
     "powers": [50, 50, 50, 50, 50],
     "allocation_history": [],
     "interference_history": [],
-    "delta_hist": [],
+    "steps_history": [[], [], [], [], []],
     "iteration": 0,
-    "max_iter": 3,
-    "individual_critiques": [],
+    "max_iter": 4,
+    "individual_critiques": [{}, {}, {}, {}, {}],
     "aggregated_critique": "",
-    "decisions": []
+    "decisions": ["", "", "", "", ""],
+    "accepted_agents": [False, False, False, False, False],
+    "final_allocation": [0, 0, 0, 0, 0]
 }
 
 output = app.invoke(initial_state)
-print("Final Output Powers:", output['powers'])
+
+print("\n==================== RESULTS ====================")
+print("Final Powers Array:     ", output['powers'])
+print("Final Allocation Locked:", output['final_allocation'])
+print("Accepted Agents Mask:   ", output['accepted_agents'])
