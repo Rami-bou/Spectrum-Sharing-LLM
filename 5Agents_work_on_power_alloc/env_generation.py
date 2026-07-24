@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-"""5Agents_spec_alloc.ipynb"""
-
 import matplotlib.pyplot as plt
 import random
 import numpy as np
@@ -220,9 +217,9 @@ def critique(state: GraphState, agent_id: int) -> dict:
     Follow these exact bands based on the Gap:
     1. Gap > 1000: REJECT, DECREASE, HIGH.
     2. 500 <= Gap <= 1000: REJECT, DECREASE, MEDIUM.
-    3. 10 <= Gap <= 499: REJECT, DECREASE, LOW.
+    3. 100 <= Gap <= 499: REJECT, DECREASE, LOW.
     4. Gap <= -500: REJECT, INCREASE, HIGH.
-    5. 0 < Gap <= 9: ACCEPT.
+    5. 0 < Gap < 100: ACCEPT.
     6. -499 <= Gap <= 0: ACCEPT.
 
     Return JSON matching the schema."""
@@ -259,7 +256,7 @@ def critique(state: GraphState, agent_id: int) -> dict:
     return update
 
 
-def aggregator(state: GraphState) -> dict:
+def aggregator(state: GraphState) -> GraphState:
     print(f"\n[Aggregator Node] Compiling Reports for Iteration {state['iteration']}...")
 
     current_interferences = [state['individual_critiques'][i]['interference'] for i in range(5)]
@@ -284,12 +281,12 @@ def aggregator(state: GraphState) -> dict:
 
     print(f"Aggregated Insight: {resp.aggregated_critique}\n")
 
-    return {
-        "aggregated_critique": resp.aggregated_critique,
-        "iteration": state['iteration'] + 1,
-        "interference_history": new_interference_history,
-        "allocation_history": new_allocation_history,
-    }
+    state["aggregated_critique"] = resp.aggregated_critique
+    state['iteration'] += 1
+    state["interference_history"] = new_interference_history
+    state["allocation_history"] = new_allocation_history
+
+    return state
 
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
