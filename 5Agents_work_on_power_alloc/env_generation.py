@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, START, END
-from langgraph.channels import Noop
 
 # --- Environment Setup ---
 f = 2e9
@@ -48,7 +47,7 @@ def gen_channels(length):
 # --- Graph State ---
 class GraphState(TypedDict):
     # Removed agent_id from shared state as it's passed directly to nodes
-    H_matrix: Annotated[List[List[int]], Noop()] # Mark H_matrix as read-only for parallel steps
+    H_matrix: List[List[int]] # Mark H_matrix as read-only for parallel steps
     powers: List[int]
 
     allocation_history: List[List[int]]
