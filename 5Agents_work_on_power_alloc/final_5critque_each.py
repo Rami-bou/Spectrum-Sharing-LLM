@@ -26,6 +26,14 @@ from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
 
+
+load_dotenv()
+
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
+os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
+os.environ["LANGCHAIN_PROJECT"] = "Test Logging"
+
 f = 2e9
 c = 3e8
 wave = c / f
@@ -187,12 +195,16 @@ def allocation(state: GraphState, agent_id) -> dict: # Must return dict
             "steps_history": {agent_id: own_steps + [step]}
         }
 
-class SingleReceiverCritique(BaseModel):
-    reasoning: str = Field(description="Your brief reasoning for the decision.")
+class SingleTargetCritique(BaseModel):
+    target_agent: int = Field(description="0-based id of the transmitter this critique is about.")
     decision: Literal["ACCEPT", "REJECT"]
     action: Literal["INCREASE", "DECREASE"]
     severity: Literal["HIGH", "MEDIUM", "LOW", "ACCEPTABLE"]
     critique: str = Field(description="Feedback explicitly restating the step range for the gap.")
+
+class ReceiverCritiqueBatch(BaseModel):
+    reasoning: str = Field(description="Your brief reasoning about the gap and each contributor.")
+    critiques: List[SingleTargetCritique] = Field(description="Exactly 4 entries, one per other transmitter.")
 
 def critique(state: GraphState, agent_id: int) -> dict:
     if agent_id in state.get('accepted_agents', []):
@@ -204,11 +216,14 @@ def critique(state: GraphState, agent_id: int) -> dict:
     interference = sum(P.get(tx, 50) * H[tx][agent_id] for tx in range(5) if tx != agent_id)
     gap = interference - I_max
 
+    contributor_nodes = [tx for tx in range(5) if tx != agent_id]
+    contributions = {tx: P.get(tx, 50) * H[tx][agent_id] for tx in contributor_nodes}
+    # => {0:1200, 1:980,...} caused interference by each agent
+
     prompt = f"""You are Receiver {agent_id + 1} in a wireless network.
     You evaluate the interference on your channel against the threshold I_max = {I_max}.
-    Gap = interference - {I_max}.
 
-    Follow these exact bands based on the Gap:
+    Follow these exact bands based on the Gap (the distance from the threshold):
     1. Gap > 1000: REJECT, DECREASE, HIGH.
     2. 500 <= Gap <= 1000: REJECT, DECREASE, MEDIUM.
     3. 100 <= Gap <= 499: REJECT, DECREASE, LOW.
@@ -219,9 +234,12 @@ def critique(state: GraphState, agent_id: int) -> dict:
     Return JSON matching the schema.
     """
 
-    msg = f"Receiver {agent_id + 1}:\nReceived Interference = {interference}\nGap = {gap}\n"
+    msg = f"Receiver {agent_id + 1}:\nTotal Interference = {interference}\nGap = {gap}\n\n"
+    msg += "Contributing transmitters (id: contribution):\n"
+    for tx in contributor_nodes:
+      msg += f"id {tx}: contributes {contributions[tx]}\n"
 
-    structured_critic = llm.with_structured_output(SingleReceiverCritique)
+    structured_critic = llm.with_structured_output(ReceiverCritiqueBatch)
     resp = structured_critic.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=msg)
@@ -232,76 +250,89 @@ def critique(state: GraphState, agent_id: int) -> dict:
     else:
         print(f"-> Rx {agent_id + 1} Decision: {resp.decision} (Interference: {interference:.1f}, Gap: {gap:.1f})")
 
-    update_dict = {
-        "global_critique": {
-            agent_id: {
-                "decision": resp.decision,
-                "action": resp.action,
-                "severity": resp.severity,
-                "critique": resp.critique
-            }
+    row = {}
+    for c in resp.critiques:
+        row[c.target_agent] = {
+            "decision": c.decision,
+            "action": c.action,
+            "severity": c.severity,
+            "critique": c.critique
         }
-    }
 
-    if resp.decision == "ACCEPT":
-        update_dict["accepted_agents"] = [agent_id]
-
-    return update_dict
+    return {"global_critique": {agent_id: row}}
 
 class AggregatorOutput(BaseModel):
-    reasoning: str = Field(description="Brief summary of overall network state.")
-    aggregated_critique: str = Field(description="Actionable summary of the 5 received critiques.")
+    reasoning: str = Field(description="Brief summary of the receivers' critiques for this transmitter.")
+    aggregated_critique: str = Field(description="Actionable summary of the received critiques.")
+    overall_decision: Literal["ACCEPT", "REJECT"] = Field(
+        description="ACCEPT only if the receivers indicate this transmitter needs no further change; REJECT if any meaningful adjustment is still needed."
+    )
 
-def aggregator(state: GraphState) -> dict: # Must return dict, NOT GraphState
-    prompt = """You are the Critique Aggregator.
-    You will read 5 individual feedback critiques.
-    Your job is to summarize this into ONE actionable paragraph.
-    You mention explicitly the decision, action to do and its severity.
+def aggregator(state: GraphState) -> dict:
+    prompt = """You are the Critique Aggregator for ONE transmitter.
+    You will read the critiques from each receiver about this transmitter's impact on them.
+    Summarize into ONE actionable paragraph, mentioning action and severity explicitly.
+    Then decide overall_decision: ACCEPT only if the transmitter genuinely needs no more
+    adjustment; REJECT if any receiver still wants a real change.
 
     Return JSON matching the schema.
     """
 
-    critiques_str = ""
-    for i in range(5):
-        c = state.get('global_critique', {}).get(i, {})
-        decision = c.get('decision', 'N/A')
-        action = c.get('action', 'N/A')
-        severity = c.get('severity', 'N/A')
-        message = c.get('critique', 'No critique provided')
-        critiques_str += f"Rx {i+1}: Decision={decision}, Action={action}, Severity={severity}, Message={message}\n"
+    global_critique = state.get('global_critique', {})
+    accepted = state.get('accepted_agents', [])
 
-    structured_agg = llm.with_structured_output(AggregatorOutput)
-    resp = structured_agg.invoke([
-        SystemMessage(content=prompt),
-        HumanMessage(content=critiques_str)
-    ])
+    individual_updates = {}
+    newly_accepted = []
 
-    updates = {}
-    for i in range(5):
-        updates[i] = resp.aggregated_critique
-    print(f"-> Aggregator: {resp.aggregated_critique}")
+    for target in range(5):
+        if target in accepted:
+            continue
+
+        opinions = []
+        for rx in range(5):
+            entry = global_critique.get(rx, {}).get(target)
+            if entry is not None:
+                opinions.append((rx, entry))
+
+        if not opinions:
+            continue
+
+        critiques_str = ""
+        for rx, entry in opinions:
+            critiques_str += f"Rx {rx+1}: Decision={entry['decision']}, Action={entry['action']}, Severity={entry['severity']}, Message={entry['critique']}\n"
+
+        structured_agg = llm.with_structured_output(AggregatorOutput)
+        resp = structured_agg.invoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content=f"Transmitter {target + 1}:\n{critiques_str}")
+        ])
+
+        individual_updates[target] = resp.aggregated_critique
+        print(f"-> Aggregator (Tx {target + 1}): {resp.aggregated_critique}")
+
+        if resp.overall_decision == "ACCEPT":
+            newly_accepted.append(target)
+            print(f"-> locking Tx {target + 1}")
 
     return {
-        "individual_critique": updates,
+        "individual_critique": individual_updates,
+        "accepted_agents": newly_accepted,
         "iteration": state.get("iteration", 0) + 1
     }
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("[Finalizer] Checking convergence...")
     if state.get("iteration", 0) >= 3:
-        print(" -> Maximum iterations reached. Finalizing.")
+        print("-> Maximum iterations reached. Finalizing.")
         return "finalize"
 
-    # Check the latest decisions dynamically
-    current_decisions = [
-        c.get("decision") for c in state.get("global_critique", {}).values()
-    ]
+    accepted_count = len(set(state.get("accepted_agents", [])))
 
-    if "REJECT" in current_decisions:
-        print(" -> Network not converged (REJECT present). Revising allocations.")
+    if accepted_count < 5:
+        print(f"-> Network not converged ({accepted_count}/5 transmitters locked). Revising allocations.")
         return "revise"
 
-    print(" -> Network converged (ALL ACCEPT). Finalizing.")
+    print("-> Network converged (ALL 5 transmitters locked). Finalizing.")
     return "finalize"
 
 
@@ -478,5 +509,4 @@ ax2.set_title('Interference Levels vs. Threshold')
 ax2.legend()
 
 plt.tight_layout()
-plt.savefig("Result.png")
 plt.show()
