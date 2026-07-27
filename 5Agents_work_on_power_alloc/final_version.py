@@ -475,4 +475,5 @@ ax2.set_title('Interference Levels vs. Threshold')
 ax2.legend()
 
 plt.tight_layout()
+plt.savefig("Result.png")
 plt.show()
