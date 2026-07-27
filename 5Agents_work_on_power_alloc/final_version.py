@@ -390,14 +390,19 @@ test_h = result_h[80:]
 test_p = result_p[80:]
 states = []
 
+mae_per_agent = np.zeros(5)
+interference_count_per_agent = np.zeros(5)
+total_se_pred = np.zeros(5)
+total_se_true = np.zeros(5)
+final_interferences = []
+
 MAE = {}
 caused_interference = 0
 se_pred = {}
 se_true = {}
 all_interference = []
 
-# Run for 1 test case
-for i in range(1):
+for i in range(len(test_h)):
   MAE[i] = 0
   se_pred[i] = 0
   se_true[i] = 0
@@ -415,55 +420,57 @@ for i in range(1):
 
   current_interferences = []
   for r in range(5):
-    # Calculate interference for receiver r
     interference = sum(output["P"][j] * test_h[i][j][r] for j in range(5) if j != r)
     current_interferences.append(interference)
 
-    MAE[i] += abs(output["P"][r] - test_p[i][r])
+    mae_per_agent[r] += abs(output["P"][r] - test_p[i][r])
     if interference > I_max:
-      caused_interference += 1
+      interference_count_per_agent[r] += 1
 
     sinr_pred = interference
     # True interference from test_p
     sinr_true = sum(test_p[i][j] * test_h[i][j][r] for j in range(5) if j != r)
 
-    se_pred[i] += math.log2(1 + (output["P"][r] * test_h[i][r][r]) / (1 + sinr_pred))
-    se_true[i] += math.log2(1 + (test_p[i][r] * test_h[i][r][r]) / (1 + sinr_true))
+    se_p = math.log2(1 + (output["P"][r] * test_h[i][r][r]) / (1 + sinr_pred))
+    se_t = math.log2(1 + (test_p[i][r] * test_h[i][r][r]) / (1 + sinr_true))
 
-  all_interference.append(current_interferences)
+    total_se_pred[r] += se_p
+    total_se_true[r] += se_t
+    if i == len(test_h) - 1:
+        current_sample_interferences.append(interf_pred)
 
-  print(f'P: {list(output["P"].values())}')
-  print(f'True P: {test_p[i]}')
-  print(f'MAE: {MAE[i] / 5}')
+    if i == len(test_h) - 1:
+        final_interferences = current_sample_interferences
 
-# Plotting
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+mae_per_agent /= len(test_h)
+interference_rate = interference_count_per_agent / len(test_h)
+avg_se_pred = total_se_pred / len(test_h)
+avg_se_true = total_se_true / len(test_h)
 
-# Plot 1: SE Comparison
+print(f"Average MAE per Agent: {mae_per_agent}")
+print(f"Interference Rate per Agent: {interference_rate}")
+
+# --- Plotting ---
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
 agents = [f'Agent {i+1}' for i in range(5)]
-# We calculate per-agent SE for the last run for plotting purposes
-last_se_pred = []
-last_se_true = []
-i = 0 # Using first test case results
-for r in range(5):
-    interf_p = sum(output["P"][j] * test_h[i][j][r] for j in range(5) if j != r)
-    interf_t = sum(test_p[i][j] * test_h[i][j][r] for j in range(5) if j != r)
-    last_se_pred.append(math.log2(1 + (output["P"][r] * test_h[i][r][r]) / (1 + interf_p)))
-    last_se_true.append(math.log2(1 + (test_p[i][r] * test_h[i][r][r]) / (1 + interf_t)))
+x = np.arange(len(agents))
 
-ax1.bar(np.arange(5) - 0.2, last_se_pred, 0.4, label='Predicted SE')
-ax1.bar(np.arange(5) + 0.2, last_se_true, 0.4, label='True SE')
-ax1.set_xticks(range(5))
+# Plot 1: SE Comparison (Averages over test set)
+ax1.bar(x - 0.2, avg_se_pred, 0.4, label='Avg Predicted SE', color='royalblue')
+ax1.bar(x + 0.2, avg_se_true, 0.4, label='Avg True SE', color='orange')
+ax1.set_xticks(x)
 ax1.set_xticklabels(agents)
-ax1.set_ylabel('Spectral Efficiency')
-ax1.set_title('SE Prediction vs True')
+ax1.set_ylabel('Spectral Efficiency (bits/s/Hz)')
+ax1.set_title('Average SE: Predicted vs True')
 ax1.legend()
 
-# Plot 2: Interference vs Threshold
-ax2.bar(agents, all_interference[0], color='skyblue', label='Interference')
-ax2.axhline(y=I_max, color='r', linestyle='--', label='Threshold (I_max)')
+# Plot 2: Interference vs Threshold (using last sample as representative)
+ax2.bar(agents, final_interferences, color='lightgreen', label='Final Sample Interference')
+ax2.axhline(y=I_max, color='red', linestyle='--', linewidth=2, label=f'Threshold (I_max={I_max})')
 ax2.set_ylabel('Interference Level')
-ax2.set_title('Interference per Receiver')
+ax2.set_title('Interference Levels vs. Threshold')
 ax2.legend()
 
 plt.tight_layout()
