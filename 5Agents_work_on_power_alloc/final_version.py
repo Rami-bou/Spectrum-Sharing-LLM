@@ -275,8 +275,8 @@ def aggregator(state: GraphState) -> dict: # Must return dict, NOT GraphState
     updates = {}
     for i in range(5):
         updates[i] = resp.aggregated_critique
+    print(f"-> Aggregator: {resp.aggregated_critique}")
 
-    # Return ONLY the delta
     return {
         "individual_critique": updates,
         "iteration": state.get("iteration", 0) + 1
@@ -417,8 +417,9 @@ for i in range(len(test_h)):
       }
   states.append(initial_state)
   output = app.invoke(initial_state)
-
+  current_sample_interferences = []
   current_interferences = []
+
   for r in range(5):
     interference = sum(output["P"][j] * test_h[i][j][r] for j in range(5) if j != r)
     current_interferences.append(interference)
@@ -437,7 +438,7 @@ for i in range(len(test_h)):
     total_se_pred[r] += se_p
     total_se_true[r] += se_t
     if i == len(test_h) - 1:
-        current_sample_interferences.append(interf_pred)
+        current_sample_interferences.append(output["P"][r])
 
     if i == len(test_h) - 1:
         final_interferences = current_sample_interferences
