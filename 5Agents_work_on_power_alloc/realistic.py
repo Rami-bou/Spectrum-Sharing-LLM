@@ -207,10 +207,10 @@ def build_prompt(train):
     for i in range(len(train)):
         prompt_primary += f"""
         If the primary channels are h_pp: {train[i][0]}
-        The the Power (P1) allocation are: {train[i][4]}
+        Then the Power (P1) allocation are: {train[i][4]}
 
         If your channels are h_ss: {train[i][1]}
-        The the Power (P2) allocation are: {train[i][5]}    
+        Then the Power (P2) allocation are: {train[i][5]}    
         """
     
     prompt_primary += "\nReturn JSON matching the schema."
