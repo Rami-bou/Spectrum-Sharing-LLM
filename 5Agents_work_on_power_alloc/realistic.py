@@ -53,7 +53,7 @@ def gen_channels(length):
 
         dist__state = random.randint(1, 3)
 
-        position_primary = []
+        position_primary_receiver = []
         direct_h_primary = []
         for i in range(N):
             if dist__state == 1:
@@ -63,7 +63,7 @@ def gen_channels(length):
             else:
                 rp = [random.uniform(25, 50), random.uniform(30, 50)]
 
-            position_primary.append(rp)
+            position_primary_receiver.append(rp)
             d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
             h_normal = int(round(h * scale_factor, 2))
@@ -71,7 +71,7 @@ def gen_channels(length):
             direct_h_primary.append(h_normal)
 
         dist__state = random.randint(1, 3)
-        position_secondary = []
+        position_secondary_receiver = []
         direct_h_secondary = []
         for i in range(M):
             if dist__state == 1:
@@ -81,7 +81,7 @@ def gen_channels(length):
             else:
                 rs = [random.uniform(25, 50), random.uniform(0, 29)]
 
-            position_secondary.append(rs)
+            position_secondary_receiver.append(rs)
             d = np.sqrt((rs[0]-secondary_transmitter[0])**2 + (rs[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
             h_normal = int(round(h * scale_factor, 2))
@@ -89,17 +89,18 @@ def gen_channels(length):
             direct_h_secondary.append(h_normal)
 
         cross_h_primary = []
-        for pos in position_primary:
-            d = np.sqrt((pos[0]-primary_transmitter[0])**2 + (pos[1]-primary_transmitter[1])**2)
+        for pos in position_primary_receiver:
+            d = np.sqrt((pos[0]-secondary_transmitter[0])**2 + (pos[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
             h_normal = int(round(h * scale_factor, 2))
             cross_h_primary.append(h_normal)
 
         cross_h_secondary = []
-        for pos in position_secondary:
-            d = np.sqrt((pos[0]-secondary_transmitter[0])**2 + (pos[1]-secondary_transmitter[1])**2)
+        for pos in position_secondary_receiver:
+            d = np.sqrt((pos[0]-primary_transmitter[0])**2 + (pos[1]-primary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
             h_normal = int(round(h * scale_factor, 2))
+            # going from primary transmitter to secondary users
             cross_h_secondary.append(h_normal)
 
         allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
@@ -145,17 +146,34 @@ class GraphState(TypedDict):
     P1: List[int]
     P2: List[int]
 
+    primary_gaps: List[float]
+    secondary_gaps: List[float]
+
     primary_critique: str
     secondary_critique: str
 
+    primary_decision: str
+    primary_severity: str
+
 def primary(state:GraphState) -> GraphState:
-    ...
+    # interference caused by secondary on primary receivers (subchannel)
+    caused_interference = [state['P2'][i] * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
+    primary_gaps = [inter - primary_I_max for inter in caused_interference]
+    state['primary_gaps'] = primary_gaps
+    print(caused_interference)
+    print(primary_gaps)
+    # prompt_primary = f"""ou are the Primary Network Evaluator protecting primary users from interference.
+    # The maximum allowed interference threshold per receiver is {primary_I_max}.
+    # Rules:
+    # If Gap > 1000
+    # """
+    return state
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     allocation_primary: List[int] = Field(description="Your allocation for all the primary receivers.")
     allocation_secondary: List[int] = Field(description="Your allocation for all of your secondary receivers.")
-    
+
 def secondary(state:GraphState) -> GraphState:
     """The primary transmitter, have more prevelige."""
     if not state['primary_critique']:
@@ -200,9 +218,11 @@ def build_prompt(train):
     return prompt_primary
 
 workflow = StateGraph(GraphState)
+workflow.add_node("Primary", primary)
 workflow.add_node("Secondary", secondary)
 workflow.set_entry_point("Secondary")
-workflow.add_edge("Secondary", END)
+workflow.add_edge("Secondary", "Primary")
+workflow.add_edge("Primary", END)
 app = workflow.compile()
 
 data = gen_channels(100)
@@ -218,8 +238,17 @@ for i in range(1):
         "cross_secondary_channels":test[i][3],
         "P1": [0, 0, 0, 0],
         "P2": [0, 0, 0, 0],
+        "primary_gaps": [],
+        "secondary_gaps": [],
         "primary_critique": "",
-        "secondary_critique": ""
+        "secondary_critique": "",
+        "primary_decision": "",
+        "primary_severity": ""
     }
 
     result = app.invoke(initial_state)
+    
+    print(f"Allocation P1 pred: {result['P1']}")
+    print(f"Allocation P1 true: {test[i][4]}")
+    print(f"Allocation P2 pred: {result['P2']}")
+    print(f"Allocation P2 true: {test[i][5]}")
