@@ -223,8 +223,3 @@ for i in range(1):
     }
 
     result = app.invoke(initial_state)
-
-    print(f"Allocation P1 result {result['P1']}")
-    print(f"Allocation P1 true {test[i][4]}")
-    print(f"Allocation P2 result {result['P2']}")
-    print(f"Allocation P2 true {test[i][5]}")
