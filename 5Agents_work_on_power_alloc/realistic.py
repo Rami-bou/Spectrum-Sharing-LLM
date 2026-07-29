@@ -183,13 +183,11 @@ def secondary(state:GraphState) -> GraphState:
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
             HumanMessage(content=f"""
-            If the primary channels are h_pp: {state['direct_primary_channels']}
-            If the primary cross channels are h_ps: {state['cross_primary_channels']}
-            The the Power (P1) allocation are:
+            If the primary channels are {state['direct_primary_channels']}
+            Then the Power (P1) allocation are:
 
-            If your channels are h_ss: {state['direct_secondary_channels']}
-            If your cross channels are h_sp: {state['cross_secondary_channels']}
-            The the Power (P2) allocation are:  
+            If the secondary channels are {state['direct_secondary_channels']}
+            Then the Power (P2) allocation are:  
             """
             )
         ])
