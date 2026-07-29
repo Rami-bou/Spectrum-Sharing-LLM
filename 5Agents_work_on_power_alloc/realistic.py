@@ -207,11 +207,9 @@ def build_prompt(train):
     for i in range(len(train)):
         prompt_primary += f"""
         If the primary channels are h_pp: {train[i][0]}
-        If the primary cross channels are h_ps: {train[i][2]}
         The the Power (P1) allocation are: {train[i][4]}
 
         If your channels are h_ss: {train[i][1]}
-        If your cross channels are h_sp: {train[i][3]}
         The the Power (P2) allocation are: {train[i][5]}    
         """
     
