@@ -108,8 +108,6 @@ def gen_channels(length):
         if allowed_p1 < N or allowed_p2 < M:
             continue
         
-        print("Allowed P1", allowed_p1)
-        print("Allowed P2", allowed_p2)
         # distribute the P1 accross the users where the nearest get less power and vise versa
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
@@ -160,12 +158,10 @@ def primary(state:GraphState) -> GraphState:
     P2 = 0
     for i in range(len(state['P2'])):
         P2 += state['P2'][i]
-        
+
     caused_interference = [P2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in caused_interference]
     state['primary_gaps'] = primary_gaps
-    print(caused_interference)
-    print(primary_gaps)
 
     # prompt_primary = f"""ou are the Primary Network Evaluator protecting primary users from interference.
     # The maximum allowed interference threshold per receiver is {primary_I_max}.
@@ -235,7 +231,7 @@ data = gen_channels(100)
 train = data[:80]
 test = data[80:]
 prompt_secondary_allocation = build_prompt(train)
-
+print(prompt_secondary_allocation)
 for i in range(1):
     initial_state = {
         "direct_primary_channels":test[i][0], # --> array [50, 10, 4]
