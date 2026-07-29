@@ -27,12 +27,12 @@ import math
 from dotenv import load_dotenv
 
 
-load_dotenv()
+# load_dotenv()
 
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
-os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
-os.environ["LANGCHAIN_PROJECT"] = "Test Logging"
+# os.environ["LANGCHAIN_TRACING_V2"] = "true"
+# os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
+# os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
+# os.environ["LANGCHAIN_PROJECT"] = "Test Logging"
 
 f = 2e9
 c = 3e8
