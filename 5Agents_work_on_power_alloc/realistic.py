@@ -144,14 +144,16 @@ class GraphState(TypedDict):
     P1: List[int]
     P2: List[int]
 
-    primary_gaps: List[float]
-    secondary_gaps: List[float]
-
     primary_critique: str
     secondary_critique: str
 
     primary_decision: str
-    primary_severity: str
+
+class PrimaryOutput(BaseModel):
+    reasoning: str = Field(description="Analyze the gaps across all primary receivers and explain which secondary sub-channel power allocation caused violations.")
+    decision: Literal["ACCEPT", "REJECT"] = Field(description="REJECT if any primary gap > 0, otherwise ACCEPT.")
+    severity: Literal["HIGH", "MEDIUM", "LOW", "ACCEPTABLE"] = Field(description="Highest severity level among violations.")
+    critique: str = Field(description="Specific instructions detailing which P2 index must be reduced and by how much based on the gap magnitude.")
 
 def primary(state:GraphState) -> GraphState:
     # interference caused by secondary on primary receivers (subchannel)
@@ -161,14 +163,40 @@ def primary(state:GraphState) -> GraphState:
 
     caused_interference = [P2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in caused_interference]
-    state['primary_gaps'] = primary_gaps
 
-    # prompt_primary = f"""ou are the Primary Network Evaluator protecting primary users from interference.
-    # The maximum allowed interference threshold per receiver is {primary_I_max}.
-    # Rules:
-    # If Gap > 1000
-    # """
+    prompt_primary = f"""You are the Primary Network Evaluator protecting primary users from interference.
+    The maximum allowed interference threshold per receiver is {primary_I_max}.
+
+    Rules:
+    If Gap > 1000: decision: REJECT, severity: HIGH, action: DECREASE.
+    If 500 < Gap <= 999: decision: REJECT, severity: MEDIUM, action: DECREASE.
+    If 100 < Gap <= 500: decision: REJECT, severity: LOW, action: DECREASE.
+    If 0 <= Gap <= 100: decision: ACCEPT.
+
+    Be explicit in your critique and mention the severity and the action to do.
     
+    Return JSON matching the schema.
+    """
+
+    structured_critic = llm.with_structured_output(PrimaryOutput)
+    resp = structured_critic.invoke([
+        SystemMessage(content=prompt_primary),
+        HumanMessage(content=f"""
+        Secondary Power Vector P2: {state['P2']}
+        Cross Channels to Primary (h_sp): {state['cross_primary_channels']}
+        Calculated Interference per Receiver: {caused_interference}
+        Primary Gaps (Interference - Threshold): {primary_gaps}
+        """
+        )
+    ])
+
+    state['primary_critique'] = resp.critique
+    state['primary_decision'] = resp.decision
+
+    print(f"[Primary Decision]: {resp.decision} ({resp.severity})")
+    print(f"[Primary Reasoning]: {resp.reasoning}")
+    print(f"[Primary Critique]: {resp.critique}")
+
     return state
 
 class SecondaryOutput(BaseModel):
@@ -183,7 +211,7 @@ def secondary(state:GraphState) -> GraphState:
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
             HumanMessage(content=f"""Complete thr following allocations depends on the channels:
-            
+
             If the primary channels are {state['direct_primary_channels']}
             Then the Power (P1) allocation are:
 
@@ -237,8 +265,6 @@ for i in range(1):
         "cross_secondary_channels":test[i][3],
         "P1": [0, 0, 0, 0],
         "P2": [0, 0, 0, 0],
-        "primary_gaps": [],
-        "secondary_gaps": [],
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
