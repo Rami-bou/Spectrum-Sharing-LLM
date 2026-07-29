@@ -182,7 +182,8 @@ def secondary(state:GraphState) -> GraphState:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
-            HumanMessage(content=f"""
+            HumanMessage(content=f"""Complete thr following allocations depends on the channels:
+            
             If the primary channels are {state['direct_primary_channels']}
             Then the Power (P1) allocation are:
 
