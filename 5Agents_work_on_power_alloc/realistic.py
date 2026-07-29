@@ -157,6 +157,7 @@ class GraphState(TypedDict):
 
 def primary(state:GraphState) -> GraphState:
     # interference caused by secondary on primary receivers (subchannel)
+    P2 = 0
     P2 += [state['P2'][i] for i in range(len(state['P2']))]
     caused_interference = [P2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in caused_interference]
