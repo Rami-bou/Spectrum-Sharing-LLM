@@ -184,7 +184,7 @@ def build_prompt(train):
     Your job is to allocate a transmission power for each one of your receivers and the primary receivers as well.
     Here is some examples on good allocations based on the channel states:\n
     """
-    for i in train:
+    for i in range(len(train)):
         prompt_primary += f"""
         If the primary channels are h_pp: {train[i][0]}
         If the primary cross channels are h_ps: {train[i][2]}
@@ -200,7 +200,7 @@ def build_prompt(train):
     return prompt_primary
 
 workflow = StateGraph(GraphState)
-workflow.add_node("Secondary", primary)
+workflow.add_node("Secondary", secondary)
 workflow.set_entry_point("Secondary")
 workflow.add_edge("Secondary", END)
 app = workflow.compile()
@@ -217,7 +217,14 @@ for i in range(1):
         "cross_primary_channels":test[i][2],
         "cross_secondary_channels":test[i][3],
         "P1": [0, 0, 0, 0],
-        "P2": [0, 0, 0, 0]
+        "P2": [0, 0, 0, 0],
+        "primary_critique": "",
+        "secondary_critique": ""
     }
 
     result = app.invoke(initial_state)
+
+    print(f"Allocation P1 result {result['P1']}")
+    print(f"Allocation P1 true {test[i][4]}")
+    print(f"Allocation P2 result {result['P2']}")
+    print(f"Allocation P2 true {test[i][5]}")
