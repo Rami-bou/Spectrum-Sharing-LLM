@@ -157,16 +157,19 @@ class GraphState(TypedDict):
 
 def primary(state:GraphState) -> GraphState:
     # interference caused by secondary on primary receivers (subchannel)
-    caused_interference = [state['P2'][i] * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
+    P2 += [state['P2'][i] for i in range(len(state['P2']))]
+    caused_interference = [P2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in caused_interference]
     state['primary_gaps'] = primary_gaps
     print(caused_interference)
     print(primary_gaps)
+
     # prompt_primary = f"""ou are the Primary Network Evaluator protecting primary users from interference.
     # The maximum allowed interference threshold per receiver is {primary_I_max}.
     # Rules:
     # If Gap > 1000
     # """
+    
     return state
 
 class SecondaryOutput(BaseModel):
