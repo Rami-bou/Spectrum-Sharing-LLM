@@ -314,29 +314,32 @@ se_true_list = []
 
 NOISE_FLOOR = 1.0 
 
-def calculate_sum_se(P2_vector, h_ss_vector, P1_vector, cross_sec_channels):
-    """Calculates SE using true SINR, including Primary interference in the denominator."""
+def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+    """Calculates Primary SE: P1 is the signal, total P2 is the interference."""
     se = 0
-    total_P2 = sum(P2_vector) # Total power broadcast by Primary Tx
+    total_P2 = sum(P2_vector) # Total power broadcast by Secondary Tx causing interference
     
+    # Iterate over the N=4 Primary receivers
     for j in range(len(P1_vector)):
-        # Signal from Secondary Tx to Secondary Rx 'j'
-        signal = P1_vector[j] * h_ss_vector[j]
+        # Signal: Primary Tx to Primary Rx 'j'
+        signal = P1_vector[j] * direct_h_primary[j]
         
-        # Interference from Primary Tx to Secondary Rx 'j'
-        interference_from_primary = total_P2 * cross_sec_channels[j]
+        # Interference: Secondary Tx to Primary Rx 'j'
+        interference_from_secondary = total_P2 * cross_h_primary[j]
         
         # SINR calculation (Signal / (Noise + Interference))
-        sinr = signal / (NOISE_FLOOR + interference_from_primary)
+        sinr = signal / (NOISE_FLOOR + interference_from_secondary)
         se += math.log2(1 + sinr)
         
     return se
 
 print("\nStarting Benchmark over Test Dataset...")
 for i in range(len(test)):
-    # Extract everything from the restored data structure
-    true_p1 = test[i][4]
-    cross_h_sec = test[i][3]
+    # 1. Extract the correct variables for Primary SE
+    direct_h_pri = test[i][0]  # Primary direct channels (len 4)
+    cross_h_pri = test[i][2]   # Secondary Tx -> Primary Rx cross channels (len 4)
+    true_p1 = test[i][4]       # P1 allocations (len 4)
+    true_p2 = test[i][5]       # Optimal P2 allocations (len 3)
     
     initial_state = {
         "direct_secondary_channels": test[i][1],
@@ -351,20 +354,20 @@ for i in range(len(test)):
     result = app.invoke(initial_state)
     
     pred_p2 = result['P2']
-    true_p2 = test[i][5]
-    h_ss = test[i][0]
     
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    # Use the new SINR calculation
-    se_pred_list.append(calculate_sum_se(pred_p2, h_ss, true_p1, cross_h_sec))
-    se_true_list.append(calculate_sum_se(true_p2, h_ss, true_p1, cross_h_sec))
+    # 2. Use the exact Primary arrays to avoid Index Errors
+    se_pred_list.append(calculate_primary_sum_se(true_p1, pred_p2, direct_h_pri, cross_h_pri))
+    se_true_list.append(calculate_primary_sum_se(true_p1, true_p2, direct_h_pri, cross_h_pri))
 
-all_pred_P2 = np.array(all_pred_P2) # Shape: (test_size, M)
-all_true_P2 = np.array(all_true_P2) # Shape: (test_size, M)
+# ==========================================
+# Metrics and Plotting
+# ==========================================
+all_pred_P2 = np.array(all_pred_P2) 
+all_true_P2 = np.array(all_true_P2) 
 
-# np.abs computes the absolute difference, mean(axis=0) averages it per column (receiver)
 mae_per_receiver = np.mean(np.abs(all_pred_P2 - all_true_P2), axis=0)
 
 print("\n" + "="*40)
@@ -374,26 +377,25 @@ for j in range(len(mae_per_receiver)):
     print(f"Secondary Receiver {j+1} MAE: {mae_per_receiver[j]:.2f} Watts")
 print("="*40 + "\n")
 
-# Determine window size based on test dataset length
 window_size = 5 if len(test) < 50 else 10
 
 def moving_average(data, w):
-    """Calculates the moving average shifting by 1 step at a time (mode='valid')."""
+    """Calculates the moving average shifting by 1 step at a time."""
     return np.convolve(data, np.ones(w), 'valid') / w
 
-# Apply the smoothing window
 smoothed_se_pred = moving_average(se_pred_list, window_size)
 smoothed_se_true = moving_average(se_true_list, window_size)
 
-# Generate the plot
+# Apply the smoothing window
 plt.figure(figsize=(12, 6))
-plt.plot(smoothed_se_true, label=f'True SE (Optimal)', color='blue', linestyle='--', marker='o', markersize=4)
-plt.plot(smoothed_se_pred, label=f'Predicted SE (AI Agent)', color='red', linestyle='-', marker='s', markersize=4)
+plt.plot(smoothed_se_true, label=f'True Optimal Primary SE', color='blue', linestyle='--', marker='o', markersize=4)
+plt.plot(smoothed_se_pred, label=f'Agent-Protected Primary SE', color='red', linestyle='-', marker='s', markersize=4)
 
-plt.title(f'Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
+plt.title(f'Primary Network Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
 plt.xlabel('Test Sample Index (Rolling Window)', fontsize=12)
 plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
+plt.savefig("Result.png")
 plt.show()
