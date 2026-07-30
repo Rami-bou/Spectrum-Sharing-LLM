@@ -156,6 +156,7 @@ def primary(state:GraphState) -> GraphState:
     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
     max_gap = max(primary_gaps)
+    print(f"Gap: {primary_gaps}")
 
     prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
     You will receive the caused interference on your channel by the secondary user's power allocation.
@@ -360,6 +361,9 @@ for i in range(1):
     
     se_pred_list.append(calculate_primary_sum_se(true_p1, pred_p2, direct_h_pri, cross_h_pri))
     se_true_list.append(calculate_primary_sum_se(true_p1, true_p2, direct_h_pri, cross_h_pri))
+
+    print(f"Allocation P2 pred: {result['P2']}")
+    print(f"Allocation P2 true: {test[i][5]}")
 
 all_pred_P2 = np.array(all_pred_P2) 
 all_true_P2 = np.array(all_true_P2) 
