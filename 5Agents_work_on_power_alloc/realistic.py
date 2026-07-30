@@ -166,10 +166,10 @@ def primary(state:GraphState) -> GraphState:
 
     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
-    
+    print(f"Primary Gap {primary_gaps}")
     interference_on_secondary = [total_p1 * state['cross_secondary_channels'][i] for i in range(len(state['cross_secondary_channels']))]
     secondary_gaps = [inter - primary_I_max for inter in interference_on_secondary]
-
+    print(f"Secondary Gap {secondary_gaps}")
     prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users. Secondary users are lower priority.
 
     Thresholds: 
