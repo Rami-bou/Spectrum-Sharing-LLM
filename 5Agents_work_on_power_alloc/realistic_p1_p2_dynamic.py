@@ -302,7 +302,7 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     if sum(state['P2']) == 0:
         return "revise"
 
-    if state['iteration'] > 3:
+    if state['iteration'] > 4:
         return "finalize"
 
     if state['primary_action'] != "KEEP":
