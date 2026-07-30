@@ -141,6 +141,7 @@ class GraphState(TypedDict):
     secondary_critique: str
 
     primary_decision: str
+    primary_action: str
 
     iteration: int
 
@@ -186,8 +187,9 @@ def primary(state: GraphState) -> GraphState:
     else:
         total_p2 = sum(state['P2'])
         interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
+        gap = [inter - primary_I_max for inter in interference_on_primary]
         max_gap = max([inter - primary_I_max for inter in interference_on_primary])
-
+        print(f"Gap Primary: {gap}")
         prompt_critique = f"""You are the Primary User with high privilege. 
         The current worst-case interference gap caused by the secondary user is {max_gap:.1f}.
         (Positive gap = secondary is harming you. Negative gap = you are safe, secondary has room).
@@ -206,7 +208,8 @@ def primary(state: GraphState) -> GraphState:
 
         state['primary_critique'] = resp.critique
         state['primary_decision'] = resp.decision
-
+        state['primary_action'] = resp.action
+        
         current_p1_total = sum(state['P1'])
         new_p1_total = int(max(10, current_p1_total + resp.p1_step))
         inverses = [1.0 / v for v in state['direct_primary_channels']]
@@ -299,14 +302,13 @@ def build_prompt(train):
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
 
-    # secondary hasn't made its initial allocation yet, force it to run
     if sum(state['P2']) == 0:
         return "revise"
 
-    if state['iteration'] > MAX_ROUNDS:
+    if state['iteration'] > 3:
         return "finalize"
 
-    if state['primary_decision'] == "REJECT":
+    if state['primary_action'] != "KEEP":
         return "revise"
 
     return "finalize"
@@ -346,6 +348,7 @@ for i in range(1):
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
+        "primary_action": "",
         "iteration": 0
     }
 
@@ -355,3 +358,4 @@ for i in range(1):
     print(f"Allocation P1 true: {test[i][4]}")
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
+    print(f"Iteration: {result['iteration']}")
