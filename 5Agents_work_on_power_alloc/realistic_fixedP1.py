@@ -312,52 +312,54 @@ all_true_P2 = []
 se_pred_list = []
 se_true_list = []
 
-# Baseline noise floor for SE calculation (can be adjusted to match your exact hardware specs)
 NOISE_FLOOR = 1.0 
 
-def calculate_sum_se(P2_vector, h_ss_vector):
-    """Calculates the Sum Spectral Efficiency (Sum-Rate) across all secondary receivers."""
+def calculate_sum_se(P2_vector, h_ss_vector, P1_vector, cross_sec_channels):
+    """Calculates SE using true SINR, including Primary interference in the denominator."""
     se = 0
-    for p, h in zip(P2_vector, h_ss_vector):
-        # Shannon Capacity Formula: log2(1 + SNR)
-        snr = (p * h) / NOISE_FLOOR
-        se += math.log2(1 + snr)
+    total_P2 = sum(P2_vector) # Total power broadcast by Primary Tx
+    
+    for j in range(len(P1_vector)):
+        # Signal from Secondary Tx to Secondary Rx 'j'
+        signal = P1_vector[j] * h_ss_vector[j]
+        
+        # Interference from Primary Tx to Secondary Rx 'j'
+        interference_from_primary = total_P2 * cross_sec_channels[j]
+        
+        # SINR calculation (Signal / (Noise + Interference))
+        sinr = signal / (NOISE_FLOOR + interference_from_primary)
+        se += math.log2(1 + sinr)
+        
     return se
 
 print("\nStarting Benchmark over Test Dataset...")
-# Loop over the entire test dataset
 for i in range(len(test)):
-    print(f"Evaluating Test Sample {i+1}/{len(test)}...")
+    # Extract everything from the restored data structure
+    true_p1 = test[i][4]
+    cross_h_sec = test[i][3]
+    
     initial_state = {
-        "direct_primary_channels": test[i][0],
         "direct_secondary_channels": test[i][1],
         "cross_primary_channels": test[i][2],
-        "cross_secondary_channels": test[i][3],
-        "P1": test[i][4], 
-        "P2": [0] * M, # Initialize at 0
+        "P2": [0] * M,
         "primary_critique": "",
-        "secondary_critique": "",
         "primary_decision": "",
-        "primary_severity": "",
         "delta_hist": [],
         "iteration": 0
     }
 
-    # Run the Multi-Agent graph
     result = app.invoke(initial_state)
     
-    # Extract final arrays
     pred_p2 = result['P2']
     true_p2 = test[i][5]
     h_ss = test[i][1]
     
-    # Store predictions and true values for MAE
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    # Store calculated Spectral Efficiency
-    se_pred_list.append(calculate_sum_se(pred_p2, h_ss))
-    se_true_list.append(calculate_sum_se(true_p2, h_ss))
+    # Use the new SINR calculation
+    se_pred_list.append(calculate_sum_se(pred_p2, h_ss, true_p1, cross_h_sec))
+    se_true_list.append(calculate_sum_se(true_p2, h_ss, true_p1, cross_h_sec))
 
 all_pred_P2 = np.array(all_pred_P2) # Shape: (test_size, M)
 all_true_P2 = np.array(all_true_P2) # Shape: (test_size, M)
