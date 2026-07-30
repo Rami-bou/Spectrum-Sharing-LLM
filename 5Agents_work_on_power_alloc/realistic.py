@@ -150,12 +150,14 @@ class GraphState(TypedDict):
     primary_decision: str
 
 class PrimaryOutput(BaseModel):
-    reasoning: str = Field(description="Analyze the gaps across all primary receivers and explain which secondary sub-channel power allocation caused violations.")
-    decision: Literal["ACCEPT", "REJECT"] = Field(description="REJECT if any primary gap > 0, otherwise ACCEPT.")
-    target: Literal["P1", "P2", "BOTH", "NONE"] = Field(description="Which power array needs to be adjusted by the secondary adjuster.")
-    severity: Literal["HIGH", "MEDIUM", "LOW"] = Field(description="Highest severity level among violations.")
-    critique: str = Field(description="Specific instructions detailing which P2 index must be reduced and by how much based on the gap magnitude.")
-
+    highest_primary_gap: float = Field(description="Extract the largest number from the Primary Gaps array (remember: -50 is larger than -800).")
+    highest_secondary_gap: float = Field(description="Extract the largest number from the Secondary Gaps array.")
+    step_by_step_logic: str = Field(description="Write out the exact mathematical comparison for the rules using the extracted gaps before making a decision.")
+    decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")
+    target: Literal["P1", "P2", "BOTH", "NONE"] = Field(description="Which power array needs adjustment.")
+    action: Literal["INCREASE", "DECREASE", "HOLD"] = Field(description="Should the target power be increased or decreased?")
+    critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
+    
 def primary(state:GraphState) -> GraphState:
     # interference caused by secondary on primary receivers (subchannel)
     
@@ -170,18 +172,22 @@ def primary(state:GraphState) -> GraphState:
     interference_on_secondary = [total_p1 * state['cross_secondary_channels'][i] for i in range(len(state['cross_secondary_channels']))]
     secondary_gaps = [inter - primary_I_max for inter in interference_on_secondary]
     print(f"Secondary Gap {secondary_gaps}")
-    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users. Secondary users are lower priority.
-
-    Thresholds: 
-    - Primary Max Interference: {primary_I_max}
-    - Secondary Max Interference: {secondary_I_max}
-
-    Evaluation Rules:
-    1. PRIMARY VIOLATION (Gap > 0): You MUST output decision="REJECT", target="P2", severity="HIGH". Instruct a sharp decrease in P2.
-    2. PRIMARY SAFE, SECONDARY VIOLATION (Sec Gap > 0): Output decision="REJECT", target="P1", severity="MEDIUM". Instruct a moderate decrease in P1, as long as it doesn't harm Primary users.
-    3. UNDERUTILIZED (Primary Gap < -200): Output decision="REJECT", target="P2", severity="LOW". Instruct an increase in P2 to better utilize the spectrum.
-    4. OPTIMAL (Primary Gap between -200 and 0, Secondary Gap <= 0): Output decision="ACCEPT", target="NONE", severity="ACCEPTABLE"..
+    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
     
+    You must evaluate the arrays strictly in this exact order:
+
+    [EVALUATION RULES]
+    RULE 1 (Primary Violation): If `highest_primary_gap` > 0
+        -> decision="REJECT", target="P2", action="DECREASE"
+    RULE 2 (Primary Underutilized): If `highest_primary_gap` < -150
+        -> decision="REJECT", target="P2", action="INCREASE"
+    RULE 3 (Secondary Violation): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` > 0
+        -> decision="REJECT", target="P1", action="DECREASE"
+    RULE 4 (Secondary Underutilized): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` < -200
+        -> decision="REJECT", target="P1", action="INCREASE"
+    RULE 5 (Optimal): If Primary gap is between -150 and 0, AND Secondary gap is between -200 and 0
+        -> decision="ACCEPT", target="NONE", action="HOLD"
+
     Return JSON matching the schema.
     """
 
@@ -189,9 +195,10 @@ def primary(state:GraphState) -> GraphState:
     resp = structured_critic.invoke([
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
-        Allocations -> P1: {state['P1']}, P2: {state['P2']}
-        Primary Gaps: {primary_gaps}
-        Secondary Gaps: {secondary_gaps}
+        P1 Allocations: {state['P1']}
+        P2 Allocations: {state['P2']}
+        Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
+        Secondary Gaps (Interference - {secondary_I_max}): {secondary_gaps}
         """
         )
     ])
@@ -199,8 +206,9 @@ def primary(state:GraphState) -> GraphState:
     state['primary_critique'] = resp.critique
     state['primary_decision'] = resp.decision
 
-    print(f"[Decision]: {resp.decision} ({resp.severity})")
-    print(f"[Reasoning]: {resp.reasoning}")
+    print(f"\n[Extracted Max Gaps]: Primary: {resp.highest_primary_gap}, Secondary: {resp.highest_secondary_gap}")
+    print(f"[Logic]: {resp.step_by_step_logic}")
+    print(f"[Decision]: {resp.decision} | Target: {resp.target} | Action: {resp.action}")
     print(f"[Critique]: {resp.critique}")
 
     return state
