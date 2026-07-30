@@ -155,18 +155,18 @@ def primary(state:GraphState) -> GraphState:
 
     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
-    print(f"Primary Gap {primary_gaps}")
+    max_gap = max(primary_gaps)
 
     prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
     You will receive the caused interference on your channel by the secondary user's power allocation.
     The Gap is defined as: Gap = caused_interference - {primary_I_max}. A positive Gap means the secondary is causing too much interference. A negative Gap means the secondary is well under the threshold and wasting power budget.
     
     Follow these exact bands based on the Gap:
-    1. Gap > 1050: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
-    2. 500 <= Gap <= 1050: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
-    3. 10 <= Gap <= 499: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
+    1. Gap > 1000: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. 500 <= Gap <= 999: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. 100 < Gap <= 499: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
+    5. 0 < Gap <= 100: Slightly above threshold, but acceptable. decision=ACCEPT.
     4. Gap <= -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=HIGH.
-    5. 0 < Gap <= 9: Slightly above threshold, but acceptable. decision=ACCEPT.
     6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT.
     7. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
 
@@ -180,8 +180,10 @@ def primary(state:GraphState) -> GraphState:
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
         P2 Allocations: {state['P2']}
-        Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
+        Worst-Case Primary Gap: {max_gap}
         """
+        # Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
+
         )
     ])
 
@@ -250,7 +252,7 @@ def secondary(state:GraphState) -> GraphState:
         total_p2 = sum(state['P2'])
         state['delta_hist'].append(resp.step)
 
-        P2_new = int(max(1, min(100, total_p2 + resp.step)))
+        P2_new = int(max(1, total_p2 + resp.step))
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
@@ -301,19 +303,38 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
-data = gen_channels(100)
-train = data[:80]
-test = data[80:]
+data = gen_channels(150)
+train = data[:90]
+test = data[90:]
 prompt_secondary_allocation = build_prompt(train)
-print(prompt_secondary_allocation)
-for i in range(1):
+all_pred_P2 = []
+all_true_P2 = []
+se_pred_list = []
+se_true_list = []
+
+# Baseline noise floor for SE calculation (can be adjusted to match your exact hardware specs)
+NOISE_FLOOR = 1.0 
+
+def calculate_sum_se(P2_vector, h_ss_vector):
+    """Calculates the Sum Spectral Efficiency (Sum-Rate) across all secondary receivers."""
+    se = 0
+    for p, h in zip(P2_vector, h_ss_vector):
+        # Shannon Capacity Formula: log2(1 + SNR)
+        snr = (p * h) / NOISE_FLOOR
+        se += math.log2(1 + snr)
+    return se
+
+print("\nStarting Benchmark over Test Dataset...")
+# Loop over the entire test dataset
+for i in range(len(test)):
+    print(f"Evaluating Test Sample {i+1}/{len(test)}...")
     initial_state = {
-        "direct_primary_channels":test[i][0], # --> array [50, 10, 4]
-        "direct_secondary_channels":test[i][1],
-        "cross_primary_channels":test[i][2],
-        "cross_secondary_channels":test[i][3],
-        "P1": [0, 0, 0, 0],
-        "P2": [0, 0, 0, 0],
+        "direct_primary_channels": test[i][0],
+        "direct_secondary_channels": test[i][1],
+        "cross_primary_channels": test[i][2],
+        "cross_secondary_channels": test[i][3],
+        "P1": test[i][4], 
+        "P2": [0] * M, # Initialize at 0
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
@@ -322,10 +343,55 @@ for i in range(1):
         "iteration": 0
     }
 
+    # Run the Multi-Agent graph
     result = app.invoke(initial_state)
     
-    # print(f"Allocation P1 pred: {result['P1']}")
-    # print(f"Allocation P1 true: {test[i][4]}")
-    print(f"Deltas: {result['delta_hist']}")
-    print(f"Allocation P2 pred: {result['P2']}")
-    print(f"Allocation P2 true: {test[i][5]}")
+    # Extract final arrays
+    pred_p2 = result['P2']
+    true_p2 = test[i][5]
+    h_ss = test[i][1]
+    
+    # Store predictions and true values for MAE
+    all_pred_P2.append(pred_p2)
+    all_true_P2.append(true_p2)
+    
+    # Store calculated Spectral Efficiency
+    se_pred_list.append(calculate_sum_se(pred_p2, h_ss))
+    se_true_list.append(calculate_sum_se(true_p2, h_ss))
+
+all_pred_P2 = np.array(all_pred_P2) # Shape: (test_size, M)
+all_true_P2 = np.array(all_true_P2) # Shape: (test_size, M)
+
+# np.abs computes the absolute difference, mean(axis=0) averages it per column (receiver)
+mae_per_receiver = np.mean(np.abs(all_pred_P2 - all_true_P2), axis=0)
+
+print("\n" + "="*40)
+print(" BENCHMARK RESULTS: MEAN ABSOLUTE ERROR ")
+print("="*40)
+for j in range(len(mae_per_receiver)):
+    print(f"Secondary Receiver {j+1} MAE: {mae_per_receiver[j]:.2f} Watts")
+print("="*40 + "\n")
+
+# Determine window size based on test dataset length
+window_size = 5 if len(test) < 50 else 10
+
+def moving_average(data, w):
+    """Calculates the moving average shifting by 1 step at a time (mode='valid')."""
+    return np.convolve(data, np.ones(w), 'valid') / w
+
+# Apply the smoothing window
+smoothed_se_pred = moving_average(se_pred_list, window_size)
+smoothed_se_true = moving_average(se_true_list, window_size)
+
+# Generate the plot
+plt.figure(figsize=(12, 6))
+plt.plot(smoothed_se_true, label=f'True SE (Optimal)', color='blue', linestyle='--', marker='o', markersize=4)
+plt.plot(smoothed_se_pred, label=f'Predicted SE (AI Agent)', color='red', linestyle='-', marker='s', markersize=4)
+
+plt.title(f'Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
+plt.xlabel('Test Sample Index (Rolling Window)', fontsize=12)
+plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
+plt.legend(fontsize=12)
+plt.grid(True, linestyle=':', alpha=0.7)
+plt.tight_layout()
+plt.show()
