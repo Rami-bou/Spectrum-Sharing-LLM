@@ -252,7 +252,7 @@ def secondary(state:GraphState) -> GraphState:
         inverses = [1.0 / v for v in state['direct_primary_channels']]
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
-        
+
     return state
 
 def build_prompt(train):
@@ -301,5 +301,6 @@ for i in range(1):
     
     # print(f"Allocation P1 pred: {result['P1']}")
     # print(f"Allocation P1 true: {test[i][4]}")
+    print(f"Deltas: {result['delta_hist']}")
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
