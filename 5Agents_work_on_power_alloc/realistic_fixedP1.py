@@ -184,7 +184,6 @@ def primary(state:GraphState) -> GraphState:
     state['primary_decision'] = resp.decision
 
     print(f"[Decision]: {resp.decision} ({resp.severity})")
-    print(f"[Reasoning]: {resp.reasoning}")
     print(f"[Critique]: {resp.critique}")
 
     return state
