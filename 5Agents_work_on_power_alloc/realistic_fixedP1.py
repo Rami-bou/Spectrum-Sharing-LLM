@@ -23,9 +23,9 @@ import math
 from dotenv import load_dotenv
 
 # number of primary receivers
-N = 3
+N = 4
 # number of secondary receivers
-M = 2
+M = 3
 
 repeated = set()
 data = []
