@@ -160,59 +160,59 @@ class PrimaryOutput(BaseModel):
     action: Literal["INCREASE", "DECREASE", "HOLD"] = Field(description="Should the target power be increased or decreased?")
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
     
-def primary(state:GraphState) -> GraphState:
-    # interference caused by secondary on primary receivers (subchannel)
+# def primary(state:GraphState) -> GraphState:
+#     # interference caused by secondary on primary receivers (subchannel)
     
-    # I changed the interference calc, and later we will add a rule on secondary to reduce the power of the highest channel gain (has more impact).
+#     # I changed the interference calc, and later we will add a rule on secondary to reduce the power of the highest channel gain (has more impact).
 
-    total_p1 = sum(state['P1'])
-    total_p2 = sum(state['P2'])
+#     total_p1 = sum(state['P1'])
+#     total_p2 = sum(state['P2'])
 
-    interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
-    primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
-    print(f"Primary Gap {primary_gaps}")
-    interference_on_secondary = [total_p1 * state['cross_secondary_channels'][i] for i in range(len(state['cross_secondary_channels']))]
-    secondary_gaps = [inter - primary_I_max for inter in interference_on_secondary]
-    print(f"Secondary Gap {secondary_gaps}")
-    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
+#     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
+#     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
+#     print(f"Primary Gap {primary_gaps}")
+#     interference_on_secondary = [total_p1 * state['cross_secondary_channels'][i] for i in range(len(state['cross_secondary_channels']))]
+#     secondary_gaps = [inter - primary_I_max for inter in interference_on_secondary]
+#     print(f"Secondary Gap {secondary_gaps}")
+#     prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
     
-    You must evaluate the arrays strictly in this exact order:
+#     You must evaluate the arrays strictly in this exact order:
 
-    [EVALUATION RULES]
-    RULE 1 (Primary Violation): If `highest_primary_gap` > 0
-        -> decision="REJECT", target="P2", action="DECREASE"
-    RULE 2 (Primary Underutilized): If `highest_primary_gap` < -150
-        -> decision="REJECT", target="P2", action="INCREASE"
-    RULE 3 (Secondary Violation): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` > 0
-        -> decision="REJECT", target="P1", action="DECREASE"
-    RULE 4 (Secondary Underutilized): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` < -200
-        -> decision="REJECT", target="P1", action="INCREASE"
-    RULE 5 (Optimal): If Primary gap is between -150 and 0, AND Secondary gap is between -200 and 0
-        -> decision="ACCEPT", target="NONE", action="HOLD"
+#     [EVALUATION RULES]
+#     RULE 1 (Primary Violation): If `highest_primary_gap` > 0
+#         -> decision="REJECT", target="P2", action="DECREASE"
+#     RULE 2 (Primary Underutilized): If `highest_primary_gap` < -150
+#         -> decision="REJECT", target="P2", action="INCREASE"
+#     RULE 3 (Secondary Violation): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` > 0
+#         -> decision="REJECT", target="P1", action="DECREASE"
+#     RULE 4 (Secondary Underutilized): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` < -200
+#         -> decision="REJECT", target="P1", action="INCREASE"
+#     RULE 5 (Optimal): If Primary gap is between -150 and 0, AND Secondary gap is between -200 and 0
+#         -> decision="ACCEPT", target="NONE", action="HOLD"
 
-    Return JSON matching the schema.
-    """
+#     Return JSON matching the schema.
+#     """
 
-    structured_critic = llm.with_structured_output(PrimaryOutput)
-    resp = structured_critic.invoke([
-        SystemMessage(content=prompt_primary),
-        HumanMessage(content=f"""
-        P1 Allocations: {state['P1']}
-        P2 Allocations: {state['P2']}
-        Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
-        Secondary Gaps (Interference - {secondary_I_max}): {secondary_gaps}
-        """
-        )
-    ])
+#     structured_critic = llm.with_structured_output(PrimaryOutput)
+#     resp = structured_critic.invoke([
+#         SystemMessage(content=prompt_primary),
+#         HumanMessage(content=f"""
+#         P1 Allocations: {state['P1']}
+#         P2 Allocations: {state['P2']}
+#         Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
+#         Secondary Gaps (Interference - {secondary_I_max}): {secondary_gaps}
+#         """
+#         )
+#     ])
 
-    state['primary_critique'] = resp.critique
-    state['primary_decision'] = resp.decision
+#     state['primary_critique'] = resp.critique
+#     state['primary_decision'] = resp.decision
 
-    print(f"[Decision]: {resp.decision} ({resp.severity})")
-    print(f"[Reasoning]: {resp.reasoning}")
-    print(f"[Critique]: {resp.critique}")
+#     print(f"[Decision]: {resp.decision} ({resp.severity})")
+#     print(f"[Reasoning]: {resp.reasoning}")
+#     print(f"[Critique]: {resp.critique}")
 
-    return state
+#     return state
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
@@ -229,7 +229,7 @@ class SecondaryResponse(BaseModel):
     reasoning: str = Field(description="Your thoughts as the Secondary user after hearing the primary's feedback.")
     p2_step: int = Field(description="The step size to add or subtract from your total P2 power.")
 
-def node1(state: GraphState) -> GraphState:
+def primary(state: GraphState) -> GraphState:
     """The Primary transmitter has higher privilege and evaluates secondary harm."""
     
     if not state.get('P1') or sum(state['P1']) == 0:
@@ -279,7 +279,7 @@ def node1(state: GraphState) -> GraphState:
 
     return state
 
-def node2(state: GraphState) -> GraphState:
+def secondary(state: GraphState) -> GraphState:
     """The Secondary transmitter negotiates, listens to primary complaints, and yields if deadlocked."""
     
     if not state.get('P2') or sum(state['P2']) == 0:
@@ -360,26 +360,30 @@ def build_prompt(train):
 
     return prompt_primary, prompt_secondary
 
-def check_compromise(state: GraphState) -> Literal["node2", END]:
-    # If primary accepts or we hit max iterations/sacrifice, end the conversation
-    if state.get('primary_decision') == "ACCEPT" or state.get('iteration', 0) >= 6:
-        print("\n=== CONVERSATION ENDED: COMPROMISE ACHIEVED ===")
-        return END
-    return "node2" # Otherwise, keep talking (Primary complaints go back to Secondary to adjust)
+def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
+  print("Finalizer...\n")
+  if state["iteration"] > 3:
+    return "finalize"
+
+  if state['primary_decision'] == "REJECT":
+    return "revise"
+
+  return "finalize"
 
 workflow = StateGraph(GraphState)
-workflow.add_node("PrimaryNode", node1)
-workflow.add_node("SecondaryNode", node2)
 
-workflow.set_entry_point("SecondaryNode") # Secondary speaks first (initial guess)
-workflow.add_edge("SecondaryNode", "PrimaryNode") # Primary evaluates Secondary
+workflow.add_node("Primary", primary)
+workflow.add_node("Secondary", secondary)
+
+workflow.set_entry_point("Secondary")
+workflow.add_edge("Secondary", "Primary")
 
 workflow.add_conditional_edges(
-    "PrimaryNode",
-    check_compromise,
+    "Primary",
+    finalizer,
     {
-        "node2": "SecondaryNode", # Loop back: Secondary adjusts based on Primary critique
-        END: END
+        "revise": "Secondary",
+        "finalize": END,
     }
 )
 
