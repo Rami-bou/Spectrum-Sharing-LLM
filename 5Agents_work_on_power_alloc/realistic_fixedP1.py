@@ -352,7 +352,7 @@ for i in range(len(test)):
     
     pred_p2 = result['P2']
     true_p2 = test[i][5]
-    h_ss = test[i][1]
+    h_ss = test[i][0]
     
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
