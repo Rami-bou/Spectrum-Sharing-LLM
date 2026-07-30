@@ -122,16 +122,6 @@ def gen_channels(length):
     
     return data
 
-
-# d1 = gen_channels(2)
-# for i in range(len(d1)):
-    # direct_primary_channels = d1[i][0]
-    # direct_secondary_channels = d1[i][1]
-    # cross_primary_channels = d1[i][2]
-    # cross_secondary_channels = d1[i][3]
-    # P1_distribution = d[i][3]
-    # P2_distribution = d[i][4]
-
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 
 """We start with the beamfor version, where each receivers i share the sub-channel"""
@@ -150,43 +140,31 @@ class GraphState(TypedDict):
     primary_decision: str
 
 class PrimaryOutput(BaseModel):
-    highest_primary_gap: float = Field(description="Extract the largest number from the Primary Gaps array (remember: -50 is larger than -800).")
-    highest_secondary_gap: float = Field(description="Extract the largest number from the Secondary Gaps array.")
-    step_by_step_logic: str = Field(description="Write out the exact mathematical comparison for the rules using the extracted gaps before making a decision.")
     decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")
-    target: Literal["P1", "P2", "BOTH", "NONE"] = Field(description="Which power array needs adjustment.")
-    action: Literal["INCREASE", "DECREASE", "HOLD"] = Field(description="Should the target power be increased or decreased?")
+    action: Literal["INCREASE", "DECREASE"] = Field(description="Should the target power be increased or decreased?")
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
-    
+
 def primary(state:GraphState) -> GraphState:
-    # interference caused by secondary on primary receivers (subchannel)
-    
-    # I changed the interference calc, and later we will add a rule on secondary to reduce the power of the highest channel gain (has more impact).
 
-    total_p1 = sum(state['P1'])
     total_p2 = sum(state['P2'])
-
     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
     print(f"Primary Gap {primary_gaps}")
-    interference_on_secondary = [total_p1 * state['cross_secondary_channels'][i] for i in range(len(state['cross_secondary_channels']))]
-    secondary_gaps = [inter - primary_I_max for inter in interference_on_secondary]
-    print(f"Secondary Gap {secondary_gaps}")
-    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
-    
-    You must evaluate the arrays strictly in this exact order:
 
-    [EVALUATION RULES]
-    RULE 1 (Primary Violation): If `highest_primary_gap` > 0
-        -> decision="REJECT", target="P2", action="DECREASE"
-    RULE 2 (Primary Underutilized): If `highest_primary_gap` < -150
-        -> decision="REJECT", target="P2", action="INCREASE"
-    RULE 3 (Secondary Violation): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` > 0
-        -> decision="REJECT", target="P1", action="DECREASE"
-    RULE 4 (Secondary Underutilized): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` < -200
-        -> decision="REJECT", target="P1", action="INCREASE"
-    RULE 5 (Optimal): If Primary gap is between -150 and 0, AND Secondary gap is between -200 and 0
-        -> decision="ACCEPT", target="NONE", action="HOLD"
+    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
+    You will receive the caused interference on your channel by the secondary user's power allocation.
+    The Gap is defined as: Gap = caused_interference - {primary_I_max}. A positive Gap means the secondary is causing too much interference. A negative Gap means the secondary is well under the threshold and wasting power budget.
+    
+    Follow these exact bands based on the Gap:
+    1. Gap > 1050: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. 500 <= Gap <= 1050: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. 10 <= Gap <= 499: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
+    4. Gap <= -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=HIGH.
+    5. 0 < Gap <= 9: Slightly above threshold, but acceptable. decision=ACCEPT.
+    6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT.
+    7. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
+
+    Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
 
     Return JSON matching the schema.
     """
@@ -198,7 +176,6 @@ def primary(state:GraphState) -> GraphState:
         P1 Allocations: {state['P1']}
         P2 Allocations: {state['P2']}
         Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
-        Secondary Gaps (Interference - {secondary_I_max}): {secondary_gaps}
         """
         )
     ])
@@ -214,7 +191,6 @@ def primary(state:GraphState) -> GraphState:
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
-    allocation_primary: List[int] = Field(description="Your allocation for all the primary receivers.")
     allocation_secondary: List[int] = Field(description="Your allocation for all of your secondary receivers.")
 
 def secondary(state:GraphState) -> GraphState:
@@ -225,16 +201,12 @@ def secondary(state:GraphState) -> GraphState:
             SystemMessage(content=prompt_secondary_allocation),
             HumanMessage(content=f"""Complete thr following allocations depends on the channels:
 
-            If the primary channels are {state['direct_primary_channels']}
-            Then the Power (P1) allocation are:
-
             If the secondary channels are {state['direct_secondary_channels']}
             Then the Power (P2) allocation are:  
             """
             )
         ])
 
-        state['P1'] = resp.allocation_primary
         state['P2'] = resp.allocation_secondary
 
     else:
@@ -245,14 +217,11 @@ def secondary(state:GraphState) -> GraphState:
 
 def build_prompt(train):
     prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
-    Your job is to allocate a transmission power for each one of your receivers and the primary receivers as well.
+    Your job is to allocate a transmission power for each one of your receivers.
     Here is some examples on good allocations based on the channel states:\n
     """
     for i in range(len(train)):
         prompt_primary += f"""
-        If the primary channels are {train[i][0]}
-        Then the Power (P1) allocation are: {train[i][4]}
-
         If the secondary channels are {train[i][1]}
         Then the Power (P2) allocation are: {train[i][5]}    
         """
@@ -290,7 +259,7 @@ for i in range(1):
 
     result = app.invoke(initial_state)
     
-    print(f"Allocation P1 pred: {result['P1']}")
-    print(f"Allocation P1 true: {test[i][4]}")
+    # print(f"Allocation P1 pred: {result['P1']}")
+    # print(f"Allocation P1 true: {test[i][4]}")
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
