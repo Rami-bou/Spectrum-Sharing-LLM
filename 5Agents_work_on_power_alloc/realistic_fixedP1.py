@@ -213,6 +213,7 @@ def secondary(state:GraphState) -> GraphState:
             )
         ])
 
+        print(f"P2 First Round Allocation {resp.allocation_secondary}")
         state['P2'] = resp.allocation_secondary
 
     else:
@@ -243,7 +244,7 @@ def secondary(state:GraphState) -> GraphState:
             """
             )
         ])
-        
+
         total_p2 = sum(state['P2'])
         state['delta_hist'].append(resp.step)
 
@@ -251,6 +252,8 @@ def secondary(state:GraphState) -> GraphState:
         inverses = [1.0 / v for v in state['direct_primary_channels']]
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
+
+        print(f"The step is {resp.step} and new P2 {state['P2']}")
 
     return state
 
@@ -300,5 +303,5 @@ for i in range(1):
     
     # print(f"Allocation P1 pred: {result['P1']}")
     # print(f"Allocation P1 true: {test[i][4]}")
-    print(f"Allocation P2 pred: {result['P2']}")
+    # print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
