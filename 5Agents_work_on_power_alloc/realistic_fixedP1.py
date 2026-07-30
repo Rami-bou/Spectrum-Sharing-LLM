@@ -294,7 +294,8 @@ for i in range(1):
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
-        "primary_severity": ""
+        "primary_severity": "",
+        "delta_hist": []
     }
 
     result = app.invoke(initial_state)
