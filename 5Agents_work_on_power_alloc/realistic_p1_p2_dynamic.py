@@ -43,6 +43,9 @@ possible_P2 = []
 primary_I_max = 1000
 secondary_I_max = 1500
 
+# how many negotiation rounds before secondary is forced to yield
+MAX_ROUNDS = 6
+
 random.seed(10)
 
 def gen_channels(length):
@@ -107,7 +110,7 @@ def gen_channels(length):
         allowed_p2 = int(round(primary_I_max / max(cross_h_primary)))
         if allowed_p1 < N or allowed_p2 < M:
             continue
-        
+
         # distribute the P1 accross the users where the nearest get less power and vise versa
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
@@ -119,18 +122,8 @@ def gen_channels(length):
 
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
-    
     return data
 
-
-# d1 = gen_channels(2)
-# for i in range(len(d1)):
-    # direct_primary_channels = d1[i][0]
-    # direct_secondary_channels = d1[i][1]
-    # cross_primary_channels = d1[i][2]
-    # cross_secondary_channels = d1[i][3]
-    # P1_distribution = d[i][3]
-    # P2_distribution = d[i][4]
 
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 
@@ -159,60 +152,6 @@ class PrimaryOutput(BaseModel):
     target: Literal["P1", "P2", "BOTH", "NONE"] = Field(description="Which power array needs adjustment.")
     action: Literal["INCREASE", "DECREASE", "HOLD"] = Field(description="Should the target power be increased or decreased?")
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
-    
-# def primary(state:GraphState) -> GraphState:
-#     # interference caused by secondary on primary receivers (subchannel)
-    
-#     # I changed the interference calc, and later we will add a rule on secondary to reduce the power of the highest channel gain (has more impact).
-
-#     total_p1 = sum(state['P1'])
-#     total_p2 = sum(state['P2'])
-
-#     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
-#     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
-#     print(f"Primary Gap {primary_gaps}")
-#     interference_on_secondary = [total_p1 * state['cross_secondary_channels'][i] for i in range(len(state['cross_secondary_channels']))]
-#     secondary_gaps = [inter - primary_I_max for inter in interference_on_secondary]
-#     print(f"Secondary Gap {secondary_gaps}")
-#     prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
-    
-#     You must evaluate the arrays strictly in this exact order:
-
-#     [EVALUATION RULES]
-#     RULE 1 (Primary Violation): If `highest_primary_gap` > 0
-#         -> decision="REJECT", target="P2", action="DECREASE"
-#     RULE 2 (Primary Underutilized): If `highest_primary_gap` < -150
-#         -> decision="REJECT", target="P2", action="INCREASE"
-#     RULE 3 (Secondary Violation): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` > 0
-#         -> decision="REJECT", target="P1", action="DECREASE"
-#     RULE 4 (Secondary Underutilized): If `highest_primary_gap` is between -150 and 0, AND `highest_secondary_gap` < -200
-#         -> decision="REJECT", target="P1", action="INCREASE"
-#     RULE 5 (Optimal): If Primary gap is between -150 and 0, AND Secondary gap is between -200 and 0
-#         -> decision="ACCEPT", target="NONE", action="HOLD"
-
-#     Return JSON matching the schema.
-#     """
-
-#     structured_critic = llm.with_structured_output(PrimaryOutput)
-#     resp = structured_critic.invoke([
-#         SystemMessage(content=prompt_primary),
-#         HumanMessage(content=f"""
-#         P1 Allocations: {state['P1']}
-#         P2 Allocations: {state['P2']}
-#         Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
-#         Secondary Gaps (Interference - {secondary_I_max}): {secondary_gaps}
-#         """
-#         )
-#     ])
-
-#     state['primary_critique'] = resp.critique
-#     state['primary_decision'] = resp.decision
-
-#     print(f"[Decision]: {resp.decision} ({resp.severity})")
-#     print(f"[Reasoning]: {resp.reasoning}")
-#     print(f"[Critique]: {resp.critique}")
-
-#     return state
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
@@ -231,9 +170,9 @@ class SecondaryResponse(BaseModel):
 
 def primary(state: GraphState) -> GraphState:
     """The Primary transmitter has higher privilege and evaluates secondary harm."""
-    
+
     if not state.get('P1') or sum(state['P1']) == 0:
-        structured_critic = llm.with_structured_output(SecondaryOutput) # Reusing for initial allocation
+        structured_critic = llm.with_structured_output(SecondaryOutput)  # Reusing for initial allocation
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_primary_allocation),
             HumanMessage(content=f"""Complete the following allocations based on the channels:
@@ -243,16 +182,16 @@ def primary(state: GraphState) -> GraphState:
         ])
         state['P1'] = resp.allocation
         print(f"[Primary] Initial P1 Set: {state['P1']}")
-        
+
     else:
         total_p2 = sum(state['P2'])
         interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
         max_gap = max([inter - primary_I_max for inter in interference_on_primary])
-        
+
         prompt_critique = f"""You are the Primary User with high privilege. 
         The current worst-case interference gap caused by the secondary user is {max_gap:.1f}.
         (Positive gap = secondary is harming you. Negative gap = you are safe, secondary has room).
-        
+
         Talk to the secondary user like a human:
         - If Gap > 0: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=REJECT, action=DECREASE).
         - If Gap <= -200: Tell them 'You are well below threshold, you can increase a bit.' (decision=ACCEPT, action=INCREASE).
@@ -267,7 +206,7 @@ def primary(state: GraphState) -> GraphState:
 
         state['primary_critique'] = resp.critique
         state['primary_decision'] = resp.decision
-        
+
         current_p1_total = sum(state['P1'])
         new_p1_total = int(max(10, current_p1_total + resp.p1_step))
         inverses = [1.0 / v for v in state['direct_primary_channels']]
@@ -281,7 +220,7 @@ def primary(state: GraphState) -> GraphState:
 
 def secondary(state: GraphState) -> GraphState:
     """The Secondary transmitter negotiates, listens to primary complaints, and yields if deadlocked."""
-    
+
     if not state.get('P2') or sum(state['P2']) == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
@@ -293,20 +232,20 @@ def secondary(state: GraphState) -> GraphState:
         ])
         state['P2'] = resp.allocation
         print(f"[Secondary] Initial P2 Set: {state['P2']}")
-        
+
     else:
-        if state['iteration'] >= 6 and state['primary_decision'] == "REJECT":
+        if state['iteration'] >= MAX_ROUNDS and state['primary_decision'] == "REJECT":
             print("\n[Arbitration]: Negotiation stuck in deadlock! Secondary makes the ultimate sacrifice.")
-            state['P2'] = [1 for _ in state['P2']] # Drop secondary power to a minimal floor
+            state['P2'] = [1 for _ in state['P2']]  # Drop secondary power to a minimal floor
             state['secondary_critique'] = "I am sacrificing my power to yield to the primary user."
             return state
 
         prompt_listener = f"""You are the Secondary Transmitter. 
         Listen to the Primary user's feedback and adjust your P2 power.
-        
+
         Primary Feedback: "{state['primary_critique']}"
         Primary Decision: {state['primary_decision']}
-        
+
         Decide your `p2_step`:
         - If Primary told you to reduce/harming them: output a negative integer (e.g., -15 to -30).
         - If Primary said you can increase: output a positive integer (e.g., +5 to +15).
@@ -321,11 +260,11 @@ def secondary(state: GraphState) -> GraphState:
 
         total_p2 = sum(state['P2'])
         new_p2_total = int(max(1, total_p2 + resp.p2_step))
-        
+
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * new_p2_total)) for inv in inverses]
-        
+
         state['secondary_critique'] = resp.reasoning
         print(f"[Secondary Response]: Step chosen: {resp.p2_step} | New P2: {state['P2']}")
 
@@ -351,21 +290,26 @@ def build_prompt(train):
         If the secondary channels are {train[i][1]}
         Then the Power (P2) allocation are: {train[i][5]} 
         """
-  
+
     prompt_primary += "\nReturn JSON matching the schema."
     prompt_secondary += "\nReturn JSON matching the schema."
 
     return prompt_primary, prompt_secondary
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
-  print("Finalizer...\n")
-  if state["iteration"] > 3:
+    print("Finalizer...\n")
+
+    # secondary hasn't made its initial allocation yet, force it to run
+    if sum(state['P2']) == 0:
+        return "revise"
+
+    if state['iteration'] > MAX_ROUNDS:
+        return "finalize"
+
+    if state['primary_decision'] == "REJECT":
+        return "revise"
+
     return "finalize"
-
-  if state['primary_decision'] == "REJECT":
-    return "revise"
-
-  return "finalize"
 
 workflow = StateGraph(GraphState)
 
@@ -393,21 +337,20 @@ prompt_primary_allocation, prompt_secondary_allocation = build_prompt(train)
 print(prompt_secondary_allocation)
 for i in range(1):
     initial_state = {
-        "direct_primary_channels":test[i][0], # --> array [50, 10, 4]
-        "direct_secondary_channels":test[i][1],
-        "cross_primary_channels":test[i][2],
-        "cross_secondary_channels":test[i][3],
-        "P1": [0, 0, 0, 0],
-        "P2": [0, 0, 0, 0],
+        "direct_primary_channels": test[i][0],
+        "direct_secondary_channels": test[i][1],
+        "cross_primary_channels": test[i][2],
+        "cross_secondary_channels": test[i][3],
+        "P1": [0] * N,
+        "P2": [0] * M,
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
-        "primary_severity": "",
         "iteration": 0
     }
 
     result = app.invoke(initial_state)
-    
+
     print(f"Allocation P1 pred: {result['P1']}")
     print(f"Allocation P1 true: {test[i][4]}")
     print(f"Allocation P2 pred: {result['P2']}")
