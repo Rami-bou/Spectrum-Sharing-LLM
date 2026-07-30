@@ -232,7 +232,7 @@ class SecondaryResponse(BaseModel):
 def node1(state: GraphState) -> GraphState:
     """The Primary transmitter has higher privilege and evaluates secondary harm."""
     
-    if state['iteration'] == 0:
+    if not state.get('P1') or sum(state['P1']) == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput) # Reusing for initial allocation
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_primary_allocation),
@@ -282,7 +282,7 @@ def node1(state: GraphState) -> GraphState:
 def node2(state: GraphState) -> GraphState:
     """The Secondary transmitter negotiates, listens to primary complaints, and yields if deadlocked."""
     
-    if state['iteration'] == 0:
+    if not state.get('P2') or sum(state['P2']) == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
