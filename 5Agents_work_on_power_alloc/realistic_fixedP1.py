@@ -139,6 +139,8 @@ class GraphState(TypedDict):
 
     primary_decision: str
 
+    delta_hist: List[int]
+
 class PrimaryOutput(BaseModel):
     decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")
     action: Literal["INCREASE", "DECREASE"] = Field(description="Should the target power be increased or decreased?")
@@ -148,6 +150,7 @@ class PrimaryOutput(BaseModel):
 def primary(state:GraphState) -> GraphState:
 
     total_p2 = sum(state['P2'])
+
     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
     print(f"Primary Gap {primary_gaps}")
@@ -192,6 +195,10 @@ class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     allocation_secondary: List[int] = Field(description="Your allocation for all of your secondary receivers.")
 
+class SecondaryRemainRounds(BaseModel):
+    reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
+    step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
+
 def secondary(state:GraphState) -> GraphState:
     """The primary transmitter, have more prevelige."""
     if not state['primary_critique']:
@@ -209,8 +216,41 @@ def secondary(state:GraphState) -> GraphState:
         state['P2'] = resp.allocation_secondary
 
     else:
-        ...
+        prompt = f"""You are a secondary user in a wireless communication environment.
+        Based on the received critique, you adjust your P2 proposal.
+        You add or substract depends on the action received from primary user.
+        You decide the step based on the P2 history and the corresponding caused interference, and you related them with the severity, so you can know whether we are far or near to the best P2.
+        The sing of the step (+ or -) depends on the action received as well.
+        
+        Severity-to-step-size guide (same bands the primary user uses):
+        - HIGH: step magnitude roughly 20 to 30
+        - MEDIUM: step magnitude roughly 10 to 20
+        - LOW: step magnitude roughly 1 to 10
 
+        Do not repeat the exact same step as your last one if the situation (gap/severity) has changed - check your own step history below.
+
+        Return JSON matching the schema.
+        """
+
+        structured_critic = llm.with_structured_output(SecondaryRemainRounds)
+        resp = structured_critic.invoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content=f"""
+            Secondary Current P2 Proposal: {state['P2']}
+            Your own step history: {state['delta_hist']}
+            Primary decision: {state['primary_decision']}
+            Primary critique: {state["primary_critique"]}
+            """
+            )
+        ])
+        
+        total_p2 = sum(state['P2'])
+        state['delta_hist'].append(resp.step)
+
+        P2_new = int(max(1, min(100, total_p2 + resp.step)))
+        inverses = [1.0 / v for v in state['direct_primary_channels']]
+        sum_inverses = sum(inverses)
+        state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
 
     return state
 
