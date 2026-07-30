@@ -149,6 +149,8 @@ class GraphState(TypedDict):
 
     primary_decision: str
 
+    iteration: int
+
 class PrimaryOutput(BaseModel):
     highest_primary_gap: float = Field(description="Extract the largest number from the Primary Gaps array (remember: -50 is larger than -800).")
     highest_secondary_gap: float = Field(description="Extract the largest number from the Secondary Gaps array.")
@@ -230,8 +232,7 @@ class SecondaryResponse(BaseModel):
 def node1(state: GraphState) -> GraphState:
     """The Primary transmitter has higher privilege and evaluates secondary harm."""
     
-    # --- Round 1: Initial Allocation ---
-    if not state.get('secondary_critique'):
+    if state['iteration'] == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput) # Reusing for initial allocation
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_primary_allocation),
@@ -241,10 +242,8 @@ def node1(state: GraphState) -> GraphState:
             """)
         ])
         state['P1'] = resp.allocation
-        state['iteration'] = 0
         print(f"[Primary] Initial P1 Set: {state['P1']}")
         
-    # --- Round 2+: Human-Style Conversation & Evaluation ---
     else:
         total_p2 = sum(state['P2'])
         interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
@@ -269,7 +268,6 @@ def node1(state: GraphState) -> GraphState:
         state['primary_critique'] = resp.critique
         state['primary_decision'] = resp.decision
         
-        # Adjust Primary P1 slightly if it wants to optimize its own channels
         current_p1_total = sum(state['P1'])
         new_p1_total = int(max(10, current_p1_total + resp.p1_step))
         inverses = [1.0 / v for v in state['direct_primary_channels']]
@@ -284,8 +282,7 @@ def node1(state: GraphState) -> GraphState:
 def node2(state: GraphState) -> GraphState:
     """The Secondary transmitter negotiates, listens to primary complaints, and yields if deadlocked."""
     
-    # --- Round 1: Initial Allocation ---
-    if not state.get('primary_critique'):
+    if state['iteration'] == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
@@ -297,7 +294,6 @@ def node2(state: GraphState) -> GraphState:
         state['P2'] = resp.allocation
         print(f"[Secondary] Initial P2 Set: {state['P2']}")
         
-    # --- Round 2+: Adjusting based on Conversation & Deadlock Sacrifice ---
     else:
         state['iteration'] += 1
         
@@ -329,7 +325,6 @@ def node2(state: GraphState) -> GraphState:
         total_p2 = sum(state['P2'])
         new_p2_total = int(max(1, total_p2 + resp.p2_step))
         
-        # Distribute power proportionally using channel inversion
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * new_p2_total)) for inv in inverses]
@@ -406,7 +401,8 @@ for i in range(1):
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
-        "primary_severity": ""
+        "primary_severity": "",
+        "iteration": 0
     }
 
     result = app.invoke(initial_state)
