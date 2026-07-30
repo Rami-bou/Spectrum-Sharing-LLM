@@ -165,6 +165,7 @@ class PrimaryResponse(BaseModel):
 class SecondaryResponse(BaseModel):
     reasoning: str = Field(description="Your thoughts as the Secondary user after hearing the primary's feedback.")
     p2_step: int = Field(description="The step size to add or subtract from your total P2 power.")
+    critique: str = Field(description="The message you tell the primary user.")
 
 def primary(state: GraphState) -> GraphState:
     """The Primary transmitter has higher privilege and evaluates secondary harm."""
@@ -192,7 +193,8 @@ def primary(state: GraphState) -> GraphState:
         (Positive gap = secondary is harming you. Negative gap = you are safe, secondary has room).
 
         Talk to the secondary user like a human:
-        - If Gap > 0: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=REJECT, action=DECREASE).
+        - If Gap > 500: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=EMERGENCY, action=DECREASE).
+        - If 0 <= Gap < 500: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=REJECT, action=DECREASE).
         - If Gap <= -200: Tell them 'You are well below threshold, you can increase a bit.' (decision=ACCEPT, action=INCREASE).
         - Otherwise: 'We are in a good compromise.' (decision=ACCEPT, action=KEEP).
         """
@@ -234,11 +236,10 @@ def secondary(state: GraphState) -> GraphState:
         print(f"[Secondary] Initial P2 Set: {state['P2']}")
 
     else:
-        if state['iteration'] >= 4 and state['primary_decision'] == "REJECT":
+        if state['primary_decision'] == "EMERGENCY":
             print("\n[Arbitration]: Negotiation stuck in deadlock! Secondary makes the ultimate sacrifice.")
             state['P2'] = [1 for _ in state['P2']]
             state['secondary_critique'] = "I am sacrificing my power to yield to the primary user."
-            return state
 
         prompt_listener = f"""You are the Secondary Transmitter. 
         Listen to the Primary user's feedback and adjust your P2 power.
@@ -266,7 +267,9 @@ def secondary(state: GraphState) -> GraphState:
         state['P2'] = [int(round((inv / sum_inverses) * new_p2_total)) for inv in inverses]
 
         state['secondary_critique'] = resp.reasoning
+        state['secondary_critique'] = resp.critique
         print(f"[Secondary Response]: Step chosen: {resp.p2_step} | New P2: {state['P2']}")
+        print(f"[Secondary Critique]: {resp.critique}")
 
     return state
 
