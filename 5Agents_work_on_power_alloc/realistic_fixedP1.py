@@ -142,6 +142,7 @@ class GraphState(TypedDict):
 class PrimaryOutput(BaseModel):
     decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")
     action: Literal["INCREASE", "DECREASE"] = Field(description="Should the target power be increased or decreased?")
+    severity: Literal["HIGH", "MEDIUM", "LOW"] = Field(description="Magnitude of correction needed, independent of direction.")
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
 
 def primary(state:GraphState) -> GraphState:
@@ -173,7 +174,6 @@ def primary(state:GraphState) -> GraphState:
     resp = structured_critic.invoke([
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
-        P1 Allocations: {state['P1']}
         P2 Allocations: {state['P2']}
         Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
         """
