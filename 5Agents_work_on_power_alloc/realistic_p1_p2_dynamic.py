@@ -273,7 +273,7 @@ def primary(state: GraphState) -> GraphState:
         inverses = [1.0 / v for v in state['direct_primary_channels']]
         sum_inv = sum(inverses)
         state['P1'] = [int(round((inv / sum_inv) * new_p1_total)) for inv in inverses]
-
+        state['iteration'] += 1
         print(f"\n[Primary Talk]: {resp.critique}")
         print(f"[Primary Decision]: {resp.decision} | Action requested: {resp.action}")
 
@@ -295,9 +295,6 @@ def secondary(state: GraphState) -> GraphState:
         print(f"[Secondary] Initial P2 Set: {state['P2']}")
         
     else:
-        state['iteration'] += 1
-        
-        # DEADLOCK BREAKER (The Secondary Sacrifice)
         if state['iteration'] >= 6 and state['primary_decision'] == "REJECT":
             print("\n[Arbitration]: Negotiation stuck in deadlock! Secondary makes the ultimate sacrifice.")
             state['P2'] = [1 for _ in state['P2']] # Drop secondary power to a minimal floor
@@ -375,7 +372,7 @@ workflow = StateGraph(GraphState)
 workflow.add_node("Primary", primary)
 workflow.add_node("Secondary", secondary)
 
-workflow.set_entry_point("Secondary")
+workflow.set_entry_point("Primary")
 workflow.add_edge("Secondary", "Primary")
 
 workflow.add_conditional_edges(
