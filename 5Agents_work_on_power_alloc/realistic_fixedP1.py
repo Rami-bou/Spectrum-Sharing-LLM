@@ -141,6 +141,8 @@ class GraphState(TypedDict):
 
     delta_hist: List[int]
 
+    iteration: int
+
 class PrimaryOutput(BaseModel):
     decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")
     action: Literal["INCREASE", "DECREASE"] = Field(description="Should the target power be increased or decreased?")
@@ -185,7 +187,7 @@ def primary(state:GraphState) -> GraphState:
 
     state['primary_critique'] = resp.critique
     state['primary_decision'] = resp.decision
-
+    state['iteration'] += 1
     print(f"[Decision]: {resp.decision} ({resp.severity})")
     print(f"[Critique]: {resp.critique}")
 
@@ -270,6 +272,16 @@ def build_prompt(train):
 
     return prompt_primary
 
+def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
+  print("Finalizer...\n")
+  if state["iteration"] > 3:
+    return "finalize"
+
+  if state['primary_decision'] == "REJECT":
+    return "revise"
+
+  return "finalize"
+
 workflow = StateGraph(GraphState)
 workflow.add_node("Primary", primary)
 workflow.add_node("Secondary", secondary)
@@ -295,7 +307,8 @@ for i in range(1):
         "secondary_critique": "",
         "primary_decision": "",
         "primary_severity": "",
-        "delta_hist": []
+        "delta_hist": [],
+        "iteration": 0
     }
 
     result = app.invoke(initial_state)
