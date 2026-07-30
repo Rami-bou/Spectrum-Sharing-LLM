@@ -252,10 +252,14 @@ def secondary(state:GraphState) -> GraphState:
         total_p2 = sum(state['P2'])
         state['delta_hist'].append(resp.step)
 
+        print(f"Delta: {resp.step}")
+
         P2_new = int(max(1, total_p2 + resp.step))
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
+
+        print(f"New power after delta: {state['P2']}")
 
     return state
 
@@ -317,29 +321,25 @@ NOISE_FLOOR = 1.0
 def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Calculates Primary SE: P1 is the signal, total P2 is the interference."""
     se = 0
-    total_P2 = sum(P2_vector) # Total power broadcast by Secondary Tx causing interference
+    total_P2 = sum(P2_vector)
     
-    # Iterate over the N=4 Primary receivers
     for j in range(len(P1_vector)):
-        # Signal: Primary Tx to Primary Rx 'j'
         signal = P1_vector[j] * direct_h_primary[j]
         
-        # Interference: Secondary Tx to Primary Rx 'j'
         interference_from_secondary = total_P2 * cross_h_primary[j]
         
-        # SINR calculation (Signal / (Noise + Interference))
+       
         sinr = signal / (NOISE_FLOOR + interference_from_secondary)
         se += math.log2(1 + sinr)
         
     return se
 
 print("\nStarting Benchmark over Test Dataset...")
-for i in range(len(test)):
-    # 1. Extract the correct variables for Primary SE
-    direct_h_pri = test[i][0]  # Primary direct channels (len 4)
-    cross_h_pri = test[i][2]   # Secondary Tx -> Primary Rx cross channels (len 4)
-    true_p1 = test[i][4]       # P1 allocations (len 4)
-    true_p2 = test[i][5]       # Optimal P2 allocations (len 3)
+for i in range(1):
+    direct_h_pri = test[i][0] 
+    cross_h_pri = test[i][2]  
+    true_p1 = test[i][4]      
+    true_p2 = test[i][5] 
     
     initial_state = {
         "direct_secondary_channels": test[i][1],
@@ -358,13 +358,9 @@ for i in range(len(test)):
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    # 2. Use the exact Primary arrays to avoid Index Errors
     se_pred_list.append(calculate_primary_sum_se(true_p1, pred_p2, direct_h_pri, cross_h_pri))
     se_true_list.append(calculate_primary_sum_se(true_p1, true_p2, direct_h_pri, cross_h_pri))
 
-# ==========================================
-# Metrics and Plotting
-# ==========================================
 all_pred_P2 = np.array(all_pred_P2) 
 all_true_P2 = np.array(all_true_P2) 
 
@@ -386,7 +382,6 @@ def moving_average(data, w):
 smoothed_se_pred = moving_average(se_pred_list, window_size)
 smoothed_se_true = moving_average(se_true_list, window_size)
 
-# Apply the smoothing window
 plt.figure(figsize=(12, 6))
 plt.plot(smoothed_se_true, label=f'True Optimal Primary SE', color='blue', linestyle='--', marker='o', markersize=4)
 plt.plot(smoothed_se_pred, label=f'Agent-Protected Primary SE', color='red', linestyle='-', marker='s', markersize=4)
