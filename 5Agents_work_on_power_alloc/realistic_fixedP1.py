@@ -308,7 +308,7 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
-data = gen_channels(150)
+data = gen_channels(120)
 train = data[:90]
 test = data[90:]
 prompt_secondary_allocation = build_prompt(train)
@@ -336,7 +336,7 @@ def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_pri
     return se
 
 print("\nStarting Benchmark over Test Dataset...")
-for i in range(1):
+for i in range(len(test)):
     direct_h_pri = test[i][0] 
     cross_h_pri = test[i][2]  
     true_p1 = test[i][4]      
