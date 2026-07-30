@@ -43,9 +43,6 @@ possible_P2 = []
 primary_I_max = 1000
 secondary_I_max = 1500
 
-# how many negotiation rounds before secondary is forced to yield
-MAX_ROUNDS = 6
-
 random.seed(10)
 
 def gen_channels(length):
@@ -173,7 +170,7 @@ def primary(state: GraphState) -> GraphState:
     """The Primary transmitter has higher privilege and evaluates secondary harm."""
 
     if not state.get('P1') or sum(state['P1']) == 0:
-        structured_critic = llm.with_structured_output(SecondaryOutput)  # Reusing for initial allocation
+        structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_primary_allocation),
             HumanMessage(content=f"""Complete the following allocations based on the channels:
@@ -228,7 +225,7 @@ def secondary(state: GraphState) -> GraphState:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
-            HumanMessage(content=f"""Complete the following allocations based on the channels:
+            HumanMessage(content=f"""Complete the following allocations based on the channels (You provide bigger values then what you've learned from the examples above):
             If the secondary channels are {state['direct_secondary_channels']}
             Then the Power (P2) allocation are:  
             """)
@@ -237,9 +234,9 @@ def secondary(state: GraphState) -> GraphState:
         print(f"[Secondary] Initial P2 Set: {state['P2']}")
 
     else:
-        if state['iteration'] >= MAX_ROUNDS and state['primary_decision'] == "REJECT":
+        if state['iteration'] >= 4 and state['primary_decision'] == "REJECT":
             print("\n[Arbitration]: Negotiation stuck in deadlock! Secondary makes the ultimate sacrifice.")
-            state['P2'] = [1 for _ in state['P2']]  # Drop secondary power to a minimal floor
+            state['P2'] = [1 for _ in state['P2']]
             state['secondary_critique'] = "I am sacrificing my power to yield to the primary user."
             return state
 
