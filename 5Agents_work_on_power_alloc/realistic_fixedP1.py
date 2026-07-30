@@ -283,11 +283,22 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
   return "finalize"
 
 workflow = StateGraph(GraphState)
+
 workflow.add_node("Primary", primary)
 workflow.add_node("Secondary", secondary)
+
 workflow.set_entry_point("Secondary")
 workflow.add_edge("Secondary", "Primary")
-workflow.add_edge("Primary", END)
+
+workflow.add_conditional_edges(
+    "Primary",
+    finalizer,
+    {
+        "revise": "Secondary",
+        "finalize": END,
+    }
+)
+
 app = workflow.compile()
 
 data = gen_channels(100)
