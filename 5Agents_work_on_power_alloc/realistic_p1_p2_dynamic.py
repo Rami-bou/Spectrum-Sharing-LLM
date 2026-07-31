@@ -373,7 +373,7 @@ app = workflow.compile()
 
 data = gen_channels(100)
 train = data[:80]
-test = data[80:81]
+test = data[80:]
 prompt_primary_allocation, prompt_secondary_allocation = build_prompt(train)
 se1_pred_list, se1_true_list = [], []
 se2_pred_list, se2_true_list = [], []
@@ -419,7 +419,6 @@ for i in range(num_tests):
     print(f"Primary Gap: {result['primary_gap']}")
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
-    print(f"Secondary Gap: {result['secondary_gap']}")
 
     def calc_se(P_target, dir_h, P_interferer, cross_h):
         total_interferer = sum(P_interferer)
