@@ -331,7 +331,6 @@ def build_prompt(train):
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer checking state...\n")
 
-    # Force continuation if iteration hasn't started or if Primary rejected/alerted
     if state['primary_decision'] in ["REJECT", "EMERGENCY", ""]:
         if state['iteration'] <= 2:
             return "revise"
@@ -359,16 +358,32 @@ app = workflow.compile()
 
 data = gen_channels(100)
 train = data[:80]
-test = data[81:]
+test = data[80:]
 prompt_primary_allocation, prompt_secondary_allocation = build_prompt(train)
-print(prompt_secondary_allocation)
-for i in range(1):
+se1_pred_list, se1_true_list = [], []
+se2_pred_list, se2_true_list = [], []
+int1_pred_list, int1_true_list = [], []
+int2_pred_list, int2_true_list = [], []
+
+num_tests = len(test)  
+print(f"Starting evaluation over {num_tests} test cases...")
+
+for i in range(num_tests):
+    print(f"\n--- Evaluating Test Sample {i+1}/{num_tests} ---")
+    
+    dir_h_p = test[i][0]
+    dir_h_s = test[i][1]
+    cross_h_p = test[i][2]
+    cross_h_s = test[i][3]
+    p1_true = test[i][4]
+    p2_true = test[i][5]
+    
     initial_state = {
-        "direct_primary_channels": test[i][0],
-        "direct_secondary_channels": test[i][1],
-        "cross_primary_channels": test[i][2],
-        "cross_secondary_channels": test[i][3],
-        "P1": test[i][4],
+        "direct_primary_channels": dir_h_p,
+        "direct_secondary_channels": dir_h_s,
+        "cross_primary_channels": cross_h_p,
+        "cross_secondary_channels": cross_h_s,
+        "P1": p1_true, 
         "P2": [0] * M,
         "primary_critique": "",
         "secondary_critique": "",
@@ -377,10 +392,80 @@ for i in range(1):
         "iteration": 0
     }
 
+    # Run the graph
     result = app.invoke(initial_state)
+    p1_pred = result['P1']
+    p2_pred = result['P2']
 
-    print(f"Allocation P1 pred: {result['P1']}")
-    print(f"Allocation P1 true: {test[i][4]}")
-    print(f"Allocation P2 pred: {result['P2']}")
-    print(f"Allocation P2 true: {test[i][5]}")
-    print(f"Iteration: {result['iteration']}")
+    def calc_se(P_target, dir_h, P_interferer, cross_h):
+        total_interferer = sum(P_interferer)
+        sinrs = [
+            (P_target[j] * dir_h[j]) / (total_interferer * cross_h[j] + 1e-6)
+            for j in range(len(dir_h))
+        ]
+        return float(np.sum([np.log2(1 + s) for s in sinrs]))
+
+    se1_pred_list.append(calc_se(p1_pred, dir_h_p, p2_pred, cross_h_p))
+    se1_true_list.append(calc_se(p1_true, dir_h_p, p2_true, cross_h_p))
+    
+    se2_pred_list.append(calc_se(p2_pred, dir_h_s, p1_pred, cross_h_s))
+    se2_true_list.append(calc_se(p2_true, dir_h_s, p1_true, cross_h_s))
+
+    int1_pred_list.append(max([sum(p2_pred) * h for h in cross_h_p]))
+    int1_true_list.append(max([sum(p2_true) * h for h in cross_h_p]))
+    
+    int2_pred_list.append(max([sum(p1_pred) * h for h in cross_h_s]))
+    int2_true_list.append(max([sum(p1_true) * h for h in cross_h_s]))
+
+def moving_average(data, window_size=5):
+    if len(data) < window_size:
+        return data 
+    return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
+
+window = min(5, num_tests) 
+
+fig, axs = plt.subplots(2, 2, figsize=(16, 10))
+fig.suptitle(f'CRN Power Allocation Performance (Moving Average Window = {window})', fontsize=16)
+
+# Figure 1: SE Primary
+axs[0, 0].plot(moving_average(se1_pred_list, window), label='Predicted', marker='o', alpha=0.7)
+axs[0, 0].plot(moving_average(se1_true_list, window), label='True', marker='x', alpha=0.7)
+axs[0, 0].set_title('Spectral Efficiency: Primary (P1)')
+axs[0, 0].set_ylabel('SE (bits/s/Hz)')
+axs[0, 0].set_xlabel('Test Sample (Windowed)')
+axs[0, 0].legend()
+axs[0, 0].grid(True, linestyle='--', alpha=0.6)
+
+axs[0, 1].plot(moving_average(se2_pred_list, window), label='Predicted', marker='o', alpha=0.7)
+axs[0, 1].plot(moving_average(se2_true_list, window), label='True', marker='x', alpha=0.7)
+axs[0, 1].set_title('Spectral Efficiency: Secondary (P2)')
+axs[0, 1].set_ylabel('SE (bits/s/Hz)')
+axs[0, 1].set_xlabel('Test Sample (Windowed)')
+axs[0, 1].legend()
+axs[0, 1].grid(True, linestyle='--', alpha=0.6)
+
+axs[1, 0].plot(moving_average(int1_pred_list, window), label='Predicted Interference', alpha=0.8)
+axs[1, 0].plot(moving_average(int1_true_list, window), label='True Interference', alpha=0.8)
+axs[1, 0].axhline(y=primary_I_max, color='r', linestyle='-', linewidth=2, label=f'Threshold ({primary_I_max})')
+axs[1, 0].set_title('Worst-Case Interference on Primary Receivers')
+axs[1, 0].set_ylabel('Interference Level')
+axs[1, 0].set_xlabel('Test Sample (Windowed)')
+axs[1, 0].legend()
+axs[1, 0].grid(True, linestyle='--', alpha=0.6)
+
+axs[1, 1].plot(moving_average(int2_pred_list, window), label='Predicted Interference', alpha=0.8)
+axs[1, 1].plot(moving_average(int2_true_list, window), label='True Interference', alpha=0.8)
+axs[1, 1].axhline(y=secondary_I_max, color='r', linestyle='-', linewidth=2, label=f'Threshold ({secondary_I_max})')
+axs[1, 1].set_title('Worst-Case Interference on Secondary Receivers')
+axs[1, 1].set_ylabel('Interference Level')
+axs[1, 1].set_xlabel('Test Sample (Windowed)')
+axs[1, 1].legend()
+axs[1, 1].grid(True, linestyle='--', alpha=0.6)
+
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+file_name = "crn_performance_results.png"
+plt.savefig(file_name, dpi=300, bbox_inches='tight')
+print(f"Plot saved successfully as {file_name}")
+
+plt.show()
