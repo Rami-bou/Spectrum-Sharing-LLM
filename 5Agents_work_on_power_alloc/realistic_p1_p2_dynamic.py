@@ -272,12 +272,12 @@ def secondary(state: GraphState) -> GraphState:
             print("\n[Arbitration]: Negotiation stuck in deadlock! Secondary makes the ultimate sacrifice.")
             state['P2'] = [1 for _ in state['P2']]
             state['secondary_critique'] = "I am sacrificing my power to yield to the primary user."
+            return state
         
         total_p1 = sum(state['P1'])
-        interference_on_primary = [total_p1 * h for h in state['cross_secondary_channels']]
-        gap = [inter - secondary_I_max for inter in interference_on_primary]
-        state['Secondary_gap'] = gap
-        max_gap = max([inter - primary_I_max for inter in interference_on_primary])
+        interference_from_primary = [total_p1 * h for h in state['cross_secondary_channels']]
+        
+        secondary_suffering_gap = max([inter - secondary_I_max for inter in interference_from_primary])
 
         prompt_listener = f"""You are the Secondary Transmitter. 
         Listen to the Primary user's feedback and adjust your P2 power.
@@ -286,19 +286,19 @@ def secondary(state: GraphState) -> GraphState:
         Primary Decision: {state['primary_decision']}
 
         Decide your `p2_step`:
-        - If Primary told you to reduce/harming them: output a negative integer (e.g., -15 to -30).
-        - If Primary said you can increase: output a positive integer (e.g., +5 to +15).
+        - If Primary Decision is REJECT or EMERGENCY: output a negative integer (e.g., -15 to -30).
+        - If Primary Decision is ACCEPT (and they say increase): output a positive integer (e.g., +5 to +15).
         - If in compromise: output 0.
 
-        You can provide a guidance message to the primary if your Gap > 500, so he can be gentle (His step should be from -30 to -50).
+        Rule for your own survival:
+        The interference you are currently receiving from the Primary has a gap of {secondary_suffering_gap:.1f}.
+        (If this gap is > 0, the Primary is harming you. If it is > 500, write a critique telling the Primary to be gentle and reduce their power by -30 to -50).
         """
 
         structured_critic = llm.with_structured_output(SecondaryResponse)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_listener),
-            HumanMessage(content=f"""Current P2: {state['P2']}
-            Max Gap: {max_gap}
-            """)
+            HumanMessage(content=f"Current P2 array: {state['P2']}")
         ])
 
         total_p2 = sum(state['P2'])
@@ -308,12 +308,10 @@ def secondary(state: GraphState) -> GraphState:
         sum_inverses = sum(inverses)
         state['P2'] = [int(round((inv / sum_inverses) * new_p2_total)) for inv in inverses]
 
-        state['secondary_critique'] = resp.reasoning
         state['secondary_critique'] = resp.critique
-        state['iteration'] += 1
+        
         print(f"[Secondary Response]: Step chosen: {resp.p2_step} | New P2: {state['P2']}")
-        print(f"[Secondary Step]: {resp.p2_step}")
-        print(f"[Secondary Critique]: {resp.critique}")
+        print(f"[Secondary Critique to Primary]: {resp.critique}")
 
     return state
 
