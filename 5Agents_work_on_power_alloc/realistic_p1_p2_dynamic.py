@@ -227,7 +227,7 @@ def secondary(state: GraphState) -> GraphState:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
-            HumanMessage(content=f"""Complete the following allocations based on the channels (You provide bigger values then what you've learned from the examples above):
+            HumanMessage(content=f"""Complete the following allocations based on the channels:
             If the secondary channels are {state['direct_secondary_channels']}
             Then the Power (P2) allocation are:  
             """)
