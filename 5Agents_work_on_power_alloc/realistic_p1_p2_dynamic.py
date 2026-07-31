@@ -171,7 +171,7 @@ def primary(state: GraphState) -> GraphState:
     """The Primary transmitter evaluates secondary harm and monitors its own Spectral Efficiency."""
 
     # --- Round 1: Initial Allocation ---
-    if not state.get('P1') or sum(state['P1']) == 0:
+    if state['iteration'] == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_primary_allocation),
@@ -230,7 +230,6 @@ def primary(state: GraphState) -> GraphState:
         sum_inv = sum(inverses)
         state['P1'] = [int(round((inv / sum_inv) * new_p1_total)) for inv in inverses]
         
-        state['iteration'] += 1
         print(f"\n[Primary Talk]: {resp.critique}")
         print(f"[Primary Decision]: {resp.decision} | Action requested: {resp.action}")
         print(f"[Primary Step P1]: {resp.p1_step} | New P1: {state['P1']}")
@@ -294,6 +293,7 @@ def secondary(state: GraphState) -> GraphState:
 
         state['secondary_critique'] = resp.reasoning
         state['secondary_critique'] = resp.critique
+        state['iteration'] += 1
         print(f"[Secondary Response]: Step chosen: {resp.p2_step} | New P2: {state['P2']}")
         print(f"[Secondary Step]: {resp.p2_step}")
         print(f"[Secondary Critique]: {resp.critique}")
