@@ -187,8 +187,11 @@ def primary(state: dict):
         prompt = f"""You are the Primary Transmitter.
         Current P1 allocation is {state['P1']}. 
         Secondary hasn't allocated yet. Just output ACCEPT, p1_step = 0, and a welcome message.
+        The you Complete the following allocations based on the channels:
+        If the secondary channels are {state['direct_secondary_channels']}
+        Then the Power (P2) allocation are:  
         """
-        structured_critic = llm.with_structured_output(PrimaryResponse)
+        structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([SystemMessage(content=prompt)])
         
         state['primary_critique'] = resp.critique
@@ -199,7 +202,6 @@ def primary(state: dict):
         return state
         
     else:
-        # 1. Calculate how the Primary is doing physically
         total_p2 = sum(state['P2'])
         sinrs = [(state['P1'][j] * state['direct_primary_channels'][j]) / (total_p2 * state['cross_primary_channels'][j] + 1e-6) for j in range(len(state['P1']))]
         se = float(np.sum([np.log2(1 + s) for s in sinrs]))
