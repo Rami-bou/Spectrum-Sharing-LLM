@@ -179,11 +179,9 @@ def primary(state: GraphState) -> GraphState:
         ])
         state['P1'] = resp.allocation
         print(f"[Primary] Initial P1 Set: {state['P1']}")
-        return state  # Exit early on round 1 so state flows cleanly
+        return state 
 
-    # --- Round 2+: Evaluation & Spectral Efficiency check ---
     else:
-        # 1. Calculate Spectral Efficiency accurately
         sinrs = [
             (state['P1'][i] * state['direct_primary_channels'][i]) / 
             (sum(state['P2']) * state['cross_primary_channels'][i] + 1e-6)
