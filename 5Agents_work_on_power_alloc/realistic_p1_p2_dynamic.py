@@ -396,7 +396,7 @@ for i in range(num_tests):
         "direct_secondary_channels": dir_h_s,
         "cross_primary_channels": cross_h_p,
         "cross_secondary_channels": cross_h_s,
-        "P1": p1_true, 
+        "P1": [0] * N, 
         "P2": [0] * M,
         "primary_critique": "",
         "secondary_critique": "",
