@@ -179,78 +179,82 @@ class SecondaryResponse(BaseModel):
     p2_step: int = Field(description="The step size to add or subtract from your total P2 power.")
     critique: str = Field(description="The message you tell the primary user.")
 
-def primary(state: GraphState) -> GraphState:
-    """The Primary transmitter evaluates secondary harm and monitors its own Spectral Efficiency."""
-
-    # --- Round 1: Initial Allocation ---
+def primary(state: dict):
+    print(f"\n--- Iteration {state['iteration']} ---")
+    
     if state['iteration'] == 0:
-        structured_critic = llm.with_structured_output(SecondaryOutput)
-        resp = structured_critic.invoke([
-            SystemMessage(content=prompt_primary_allocation),
-            HumanMessage(content=f"If the primary channels are {state['direct_primary_channels']}...")
-        ])
-        state['P1'] = resp.allocation
-        print(f"[Primary] Initial P1 Set: {state['P1']}")
-        return state 
-
-    else:
-        sinrs = [
-            (state['P1'][i] * state['direct_primary_channels'][i]) / 
-            (sum(state['P2']) * state['cross_primary_channels'][i] + 1e-6)
-            for i in range(len(state['direct_primary_channels']))
-        ]
-        se = float(np.sum([np.log2(1 + s) for s in sinrs]))
-        accept = (2.0 <= se <= 5.0)
-
-        # 2. Compute Interference Gaps
-        total_p2 = sum(state['P2'])
-        interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
-        gap = [inter - primary_I_max for inter in interference_on_primary]
-        state['primary_gap'] = gap
-        max_gap = max(gap)
-        print(f"Gap Primary: {gap} | Current SE: {se:.2f} (Acceptable: {accept})")
-
-        prompt_critique = f"""You are the Primary User with high privilege. 
-        Current Interference Max Gap: {max_gap:.1f}
-        Current Spectral Efficiency (SE): {se:.2f} (Target Range: 2.0 to 5.0)
-
-        Rules for `primary_decision` and `action`:
-        - Gap > 500: (decision=EMERGENCY, action=DECREASE).
-        - 0 <= Gap <= 500: (decision=REJECT, action=DECREASE).
-        - Gap <= -200: (decision=ACCEPT, action=INCREASE).
-        - Otherwise: (decision=ACCEPT, action=KEEP).
-
-        Rules for your own `p1_step` power adjustment:
-        - If SE < 2.0: output positive integer (e.g., +10 to +20) to boost your signal.
-        - If SE > 5.0: output negative integer (e.g., -10 to -20) to save power.
-        - If 2.0 <= SE <= 5.0: output 0.
+        # initial run, just evaluate the starting state
+        prompt = f"""You are the Primary Transmitter.
+        Current P1 allocation is {state['P1']}. 
+        Secondary hasn't allocated yet. Just output ACCEPT, p1_step = 0, and a welcome message.
         """
-
         structured_critic = llm.with_structured_output(PrimaryResponse)
-        resp = structured_critic.invoke([
-            SystemMessage(content=prompt_critique),
-            HumanMessage(content=f"""
-            Current P2 total: {total_p2}
-            Secondary message: '{state.get('secondary_critique', 'None')}'
-            """)
-        ])
-
+        resp = structured_critic.invoke([SystemMessage(content=prompt)])
+        
         state['primary_critique'] = resp.critique
         state['primary_decision'] = resp.decision
         state['primary_action'] = resp.action
         
-        # Adjust P1 based on SE requirements
-        current_p1_total = sum(state['P1'])
-        new_p1_total = int(max(10, current_p1_total + resp.p1_step))
-        inverses = [1.0 / v for v in state['direct_primary_channels']]
-        sum_inv = sum(inverses)
-        state['P1'] = [int(round((inv / sum_inv) * new_p1_total)) for inv in inverses]
+        print(f"[Primary]: {resp.critique}")
+        return state
         
-        print(f"\n[Primary Talk]: {resp.critique}")
-        print(f"[Primary Decision]: {resp.decision} | Action requested: {resp.action}")
-        print(f"[Primary Step P1]: {resp.p1_step} | New P1: {state['P1']}")
-
-    return state
+    else:
+        # 1. Calculate how the Primary is doing physically
+        total_p2 = sum(state['P2'])
+        sinrs = [(state['P1'][j] * state['direct_primary_channels'][j]) / (total_p2 * state['cross_primary_channels'][j] + 1e-6) for j in range(len(state['P1']))]
+        se = float(np.sum([np.log2(1 + s) for s in sinrs]))
+        
+        # Calculate how much interference P2 is causing to P1
+        interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
+        gap = [inter - primary_I_max for inter in interference_on_primary]
+        max_gap = max(gap)
+        
+        # 2. Cooperative Prompt for the Primary
+        prompt_critique = f"""You are the Primary Transmitter in a Cognitive Radio Network.
+        
+        Your physical metrics right now:
+        - Your Spectral Efficiency (SE): {se:.2f}
+        - The interference gap from the Secondary: {max_gap:.1f} (If > 0, they are violating your limit!)
+        
+        Secondary's last message to you: "{state['secondary_critique']}"
+        
+        Your task is to be cooperative but firm. You want an SE between 2.5 and 3.5. 
+        
+        Rules for judging the Secondary:
+        - If max gap > 500: output EMERGENCY (shut them down).
+        - If max gap > 0: output REJECT and tell them to decrease.
+        - If max gap < 0: output ACCEPT and tell them they are fine.
+        
+        Rules for adjusting your own power (p1_step):
+        - If SE < 2.0: output a positive integer (+10 to +20).
+        - If SE is between 2.5 and 3.5: output 0 (you are satisfied, let the network stabilize).
+        - If SE > 3.5 OR (Secondary is complaining about interference AND your SE > 2.5): output a negative integer (-5 to -15) to be nice and give them room.
+        """
+        
+        structured_critic = llm.with_structured_output(PrimaryResponse)
+        resp = structured_critic.invoke([
+            SystemMessage(content=prompt_critique),
+            HumanMessage(content=f"Current P1 array: {state['P1']}")
+        ])
+        
+        # 3. Apply the Primary's self-adjustment
+        current_p1_total = sum(state['P1'])
+        new_p1_total = int(max(10, current_p1_total + resp.p1_step)) # keep at least 10 so it doesn't die
+        
+        inverses = [1.0 / v for v in state['direct_primary_channels']]
+        sum_inverses = sum(inverses)
+        state['P1'] = [int(round((inv / sum_inverses) * new_p1_total)) for inv in inverses]
+        
+        # update state variables
+        state['primary_critique'] = resp.critique
+        state['primary_decision'] = resp.decision
+        state['primary_action'] = resp.action
+        
+        print(f"[Primary Physical] SE: {se:.2f} | Gap: {max_gap:.1f}")
+        print(f"[Primary Action] step chosen: {resp.p1_step} | New P1: {state['P1']}")
+        print(f"[Primary Message]: {resp.critique}")
+        
+        return state
 
 def secondary(state: GraphState) -> GraphState:
     """The Secondary transmitter negotiates, listens to primary complaints, and yields if deadlocked."""
