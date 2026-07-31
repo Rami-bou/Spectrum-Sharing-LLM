@@ -404,6 +404,8 @@ for i in range(num_tests):
         "secondary_critique": "",
         "primary_decision": "",
         "primary_action": "",
+        "primary_gap": [],
+        "Secondary_gap": [],
         "iteration": 0
     }
 
