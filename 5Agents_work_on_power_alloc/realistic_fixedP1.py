@@ -317,8 +317,6 @@ all_true_P2 = []
 se_pred_list = []
 se_true_list = []
 
-NOISE_FLOOR = 1.0 
-
 def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Calculates Primary SE: P1 is the signal, total P2 is the interference."""
     se = 0
@@ -330,7 +328,7 @@ def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_pri
         interference_from_secondary = total_P2 * cross_h_primary[j]
         
        
-        sinr = signal / (NOISE_FLOOR + interference_from_secondary)
+        sinr = signal / (1.0 + interference_from_secondary)
         se += math.log2(1 + sinr)
         
     return se
