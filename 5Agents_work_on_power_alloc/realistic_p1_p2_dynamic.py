@@ -472,7 +472,7 @@ axs[1, 1].grid(True, linestyle='--', alpha=0.6)
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
 file_name = "crn_performance_results.png"
-# plt.savefig(file_name, dpi=300, bbox_inches='tight')
+plt.savefig(file_name, dpi=300, bbox_inches='tight')
 print(f"Plot saved successfully as {file_name}")
 
 plt.show()
