@@ -225,7 +225,10 @@ def primary(state: GraphState) -> GraphState:
         structured_critic = llm.with_structured_output(PrimaryResponse)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_critique),
-            HumanMessage(content=f"Current P2 total: {total_p2}, Secondary message: '{state.get('secondary_critique', 'None')}'")
+            HumanMessage(content=f"""
+            Current P2 total: {total_p2}
+            Secondary message: '{state.get('secondary_critique', 'None')}'
+            """)
         ])
 
         state['primary_critique'] = resp.critique
@@ -403,7 +406,10 @@ for i in range(num_tests):
     result = app.invoke(initial_state)
     p1_pred = result['P1']
     p2_pred = result['P2']
-
+    print(f"Allocation P1 pred: {result['P1']}")
+    print(f"Allocation P1 true: {test[i][4]}")
+    print(f"Allocation P2 pred: {result['P2']}")
+    print(f"Allocation P2 true: {test[i][5]}")
     def calc_se(P_target, dir_h, P_interferer, cross_h):
         total_interferer = sum(P_interferer)
         sinrs = [
