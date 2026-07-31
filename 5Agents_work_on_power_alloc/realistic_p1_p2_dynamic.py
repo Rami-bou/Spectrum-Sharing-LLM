@@ -334,7 +334,7 @@ app = workflow.compile()
 
 data = gen_channels(100)
 train = data[:80]
-test = data[80:]
+test = data[81:]
 prompt_primary_allocation, prompt_secondary_allocation = build_prompt(train)
 print(prompt_secondary_allocation)
 for i in range(1):
