@@ -168,65 +168,74 @@ class SecondaryResponse(BaseModel):
     critique: str = Field(description="The message you tell the primary user.")
 
 def primary(state: GraphState) -> GraphState:
-    """The Primary transmitter has higher privilege and evaluates secondary harm."""
+    """The Primary transmitter evaluates secondary harm and monitors its own Spectral Efficiency."""
 
+    # --- Round 1: Initial Allocation ---
     if not state.get('P1') or sum(state['P1']) == 0:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_primary_allocation),
-            HumanMessage(content=f"""Complete the following allocations based on the channels:
-            If the primary channels are {state['direct_primary_channels']}
-            Then the Power (P1) allocation are:
-            """)
+            HumanMessage(content=f"If the primary channels are {state['direct_primary_channels']}...")
         ])
         state['P1'] = resp.allocation
         print(f"[Primary] Initial P1 Set: {state['P1']}")
+        return state  # Exit early on round 1 so state flows cleanly
 
+    # --- Round 2+: Evaluation & Spectral Efficiency check ---
     else:
-        se = np.log2(1 + (sum(state['P1']) * state['direct_primary_channels'][i] for i in range(len(state['direct_primary_channels']))) / 
-                    (sum(state['P2']) * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))))
-        accept = False
-        if 2.0 <= se <= 5.0:
-            accept = True
+        # 1. Calculate Spectral Efficiency accurately
+        sinrs = [
+            (state['P1'][i] * state['direct_primary_channels'][i]) / 
+            (sum(state['P2']) * state['cross_primary_channels'][i] + 1e-6)
+            for i in range(len(state['direct_primary_channels']))
+        ]
+        se = float(np.sum([np.log2(1 + s) for s in sinrs]))
+        accept = (2.0 <= se <= 5.0)
 
+        # 2. Compute Interference Gaps
         total_p2 = sum(state['P2'])
         interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
         gap = [inter - primary_I_max for inter in interference_on_primary]
-        max_gap = max([inter - primary_I_max for inter in interference_on_primary])
-        print(f"Gap Primary: {gap}")
+        max_gap = max(gap)
+        print(f"Gap Primary: {gap} | Current SE: {se:.2f} (Acceptable: {accept})")
 
         prompt_critique = f"""You are the Primary User with high privilege. 
-        The current worst-case interference gap caused by the secondary user is {max_gap:.1f}.
-        (Positive gap = secondary is harming you. Negative gap = you are safe, secondary has room).
+        Current Interference Max Gap: {max_gap:.1f}
+        Current Spectral Efficiency (SE): {se:.2f} (Target Range: 2.0 to 5.0)
 
-        Talk to the secondary user like a human:
-        - If Gap > 500: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=EMERGENCY, action=DECREASE).
-        - If 0 <= Gap < 500: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=REJECT, action=DECREASE).
-        - If Gap <= -200: Tell them 'You are well below threshold, you can increase a bit.' (decision=ACCEPT, action=INCREASE).
-        - Otherwise: 'We are in a good compromise.' (decision=ACCEPT, action=KEEP).
+        Rules for `primary_decision` and `action`:
+        - Gap > 500: (decision=EMERGENCY, action=DECREASE).
+        - 0 <= Gap <= 500: (decision=REJECT, action=DECREASE).
+        - Gap <= -200: (decision=ACCEPT, action=INCREASE).
+        - Otherwise: (decision=ACCEPT, action=KEEP).
 
-        Youe SE should in a acceptable range when you listen and try to be gentle with secondary.
+        Rules for your own `p1_step` power adjustment:
+        - If SE < 2.0: output positive integer (e.g., +10 to +20) to boost your signal.
+        - If SE > 5.0: output negative integer (e.g., -10 to -20) to save power.
+        - If 2.0 <= SE <= 5.0: output 0.
         """
 
         structured_critic = llm.with_structured_output(PrimaryResponse)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_critique),
-            HumanMessage(content=f"Current P2 total: {total_p2}, Max Gap: {max_gap}, Secondary message: {state['secondary_critique']} (You listen to the secondary when he send you message, but without violate your channel, (if accept = {accept} so you don't violating your channel)).")
+            HumanMessage(content=f"Current P2 total: {total_p2}, Secondary message: '{state.get('secondary_critique', 'None')}'")
         ])
 
         state['primary_critique'] = resp.critique
         state['primary_decision'] = resp.decision
         state['primary_action'] = resp.action
         
+        # Adjust P1 based on SE requirements
         current_p1_total = sum(state['P1'])
         new_p1_total = int(max(10, current_p1_total + resp.p1_step))
         inverses = [1.0 / v for v in state['direct_primary_channels']]
         sum_inv = sum(inverses)
         state['P1'] = [int(round((inv / sum_inv) * new_p1_total)) for inv in inverses]
+        
         state['iteration'] += 1
         print(f"\n[Primary Talk]: {resp.critique}")
         print(f"[Primary Decision]: {resp.decision} | Action requested: {resp.action}")
-        print(f"[Primary Step]: {resp.p1_step}")
+        print(f"[Primary Step P1]: {resp.p1_step} | New P1: {state['P1']}")
 
     return state
 
@@ -320,16 +329,12 @@ def build_prompt(train):
     return prompt_primary, prompt_secondary
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
-    print("Finalizer...\n")
+    print("Finalizer checking state...\n")
 
-    if sum(state['P2']) == 0:
-        return "revise"
-
-    if state['iteration'] > 4:
-        return "finalize"
-
-    if state['primary_action'] != "KEEP":
-        return "revise"
+    # Force continuation if iteration hasn't started or if Primary rejected/alerted
+    if state['primary_decision'] in ["REJECT", "EMERGENCY", ""]:
+        if state['iteration'] <= 2:
+            return "revise"
 
     return "finalize"
 
@@ -338,7 +343,7 @@ workflow = StateGraph(GraphState)
 workflow.add_node("Primary", primary)
 workflow.add_node("Secondary", secondary)
 
-workflow.set_entry_point("Primary")
+workflow.set_entry_point("Secondary")
 workflow.add_edge("Secondary", "Primary")
 
 workflow.add_conditional_edges(
