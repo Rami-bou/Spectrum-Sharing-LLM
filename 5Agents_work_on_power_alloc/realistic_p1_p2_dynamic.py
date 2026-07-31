@@ -183,11 +183,18 @@ def primary(state: GraphState) -> GraphState:
         print(f"[Primary] Initial P1 Set: {state['P1']}")
 
     else:
+        se = np.log2(1 + (sum(state['P1']) * state['direct_primary_channels'][i] for i in range(len(state['direct_primary_channels']))) / 
+                    (sum(state['P2']) * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))))
+        accept = False
+        if 2.0 <= se <= 5.0:
+            accept = True
+
         total_p2 = sum(state['P2'])
         interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
         gap = [inter - primary_I_max for inter in interference_on_primary]
         max_gap = max([inter - primary_I_max for inter in interference_on_primary])
         print(f"Gap Primary: {gap}")
+
         prompt_critique = f"""You are the Primary User with high privilege. 
         The current worst-case interference gap caused by the secondary user is {max_gap:.1f}.
         (Positive gap = secondary is harming you. Negative gap = you are safe, secondary has room).
@@ -197,12 +204,14 @@ def primary(state: GraphState) -> GraphState:
         - If 0 <= Gap < 500: Tell them 'Hey, reduce your power, you are harming my channels!' (decision=REJECT, action=DECREASE).
         - If Gap <= -200: Tell them 'You are well below threshold, you can increase a bit.' (decision=ACCEPT, action=INCREASE).
         - Otherwise: 'We are in a good compromise.' (decision=ACCEPT, action=KEEP).
+
+        Youe SE should in a acceptable range when you listen and try to be gentle with secondary.
         """
 
         structured_critic = llm.with_structured_output(PrimaryResponse)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_critique),
-            HumanMessage(content=f"Current P2 total: {total_p2}, Max Gap: {max_gap}, Secondary message: {state['secondary_critique']} (You listen to the secondary when he send you message, but without violate your channel).")
+            HumanMessage(content=f"Current P2 total: {total_p2}, Max Gap: {max_gap}, Secondary message: {state['secondary_critique']} (You listen to the secondary when he send you message, but without violate your channel, (if accept = {accept} so you don't violating your channel)).")
         ])
 
         state['primary_critique'] = resp.critique
@@ -354,7 +363,7 @@ for i in range(1):
         "direct_secondary_channels": test[i][1],
         "cross_primary_channels": test[i][2],
         "cross_secondary_channels": test[i][3],
-        "P1": [0] * N,
+        "P1": test[i][4],
         "P2": [0] * M,
         "primary_critique": "",
         "secondary_critique": "",
