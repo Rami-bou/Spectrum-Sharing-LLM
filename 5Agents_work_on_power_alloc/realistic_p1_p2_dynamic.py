@@ -267,9 +267,9 @@ def secondary(state: GraphState) -> GraphState:
         state['P2'] = [int(round((inv / sum_inverses) * new_p2_total)) for inv in inverses]
 
         state['secondary_critique'] = resp.reasoning
-        state['secondary_critique'] = resp.critique
+        # state['secondary_critique'] = resp.critique
         print(f"[Secondary Response]: Step chosen: {resp.p2_step} | New P2: {state['P2']}")
-        print(f"[Secondary Critique]: {resp.critique}")
+        # print(f"[Secondary Critique]: {resp.critique}")
 
     return state
 
