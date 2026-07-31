@@ -149,6 +149,9 @@ class GraphState(TypedDict):
     primary_decision: str
     primary_action: str
 
+    primary_gap: List[int]
+    Secondary_gap: List[int]
+
     iteration: int
 
 class PrimaryOutput(BaseModel):
@@ -203,6 +206,7 @@ def primary(state: GraphState) -> GraphState:
         total_p2 = sum(state['P2'])
         interference_on_primary = [total_p2 * h for h in state['cross_primary_channels']]
         gap = [inter - primary_I_max for inter in interference_on_primary]
+        state['primary_gap'] = gap
         max_gap = max(gap)
         print(f"Gap Primary: {gap} | Current SE: {se:.2f} (Acceptable: {accept})")
 
@@ -272,6 +276,7 @@ def secondary(state: GraphState) -> GraphState:
         total_p1 = sum(state['P1'])
         interference_on_primary = [total_p1 * h for h in state['cross_secondary_channels']]
         gap = [inter - secondary_I_max for inter in interference_on_primary]
+        state['Secondary_gap'] = gap
         max_gap = max([inter - primary_I_max for inter in interference_on_primary])
 
         prompt_listener = f"""You are the Secondary Transmitter. 
@@ -406,10 +411,14 @@ for i in range(num_tests):
     result = app.invoke(initial_state)
     p1_pred = result['P1']
     p2_pred = result['P2']
+
     print(f"Allocation P1 pred: {result['P1']}")
     print(f"Allocation P1 true: {test[i][4]}")
+    print(f"Primary Gap: {result['primary_gap']}")
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
+    print(f"Secondary Gap: {result['secondary_gap']}")
+
     def calc_se(P_target, dir_h, P_interferer, cross_h):
         total_interferer = sum(P_interferer)
         sinrs = [
