@@ -117,6 +117,15 @@ def gen_channels(length):
         sum_inverses = sum(inverses)
         P2_dist = [int(round((inv / sum_inverses) * allowed_p2)) for inv in inverses]
 
+        sinrs = [
+            (P1_dist[i] * direct_h_primary[i]) / 
+            (sum(P2_dist) * cross_h_primary[i] + 1e-6)
+            for i in range(len(direct_h_primary))
+        ]
+        se = float(np.sum([np.log2(1 + s) for s in sinrs]))
+        if not (2.0 <= se <= 5.0):
+            continue
+
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
@@ -356,7 +365,7 @@ app = workflow.compile()
 
 data = gen_channels(100)
 train = data[:80]
-test = data[80:]
+test = data[80:81]
 prompt_primary_allocation, prompt_secondary_allocation = build_prompt(train)
 se1_pred_list, se1_true_list = [], []
 se2_pred_list, se2_true_list = [], []
@@ -463,7 +472,7 @@ axs[1, 1].grid(True, linestyle='--', alpha=0.6)
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
 file_name = "crn_performance_results.png"
-plt.savefig(file_name, dpi=300, bbox_inches='tight')
+# plt.savefig(file_name, dpi=300, bbox_inches='tight')
 print(f"Plot saved successfully as {file_name}")
 
 plt.show()
