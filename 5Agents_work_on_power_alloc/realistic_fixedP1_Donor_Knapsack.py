@@ -55,6 +55,70 @@ def get_mcs_threshold(sinr_db):
             break
     return target_th
 
+def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
+    """
+    Distributes allowed_p2 among secondary receivers to maximize aggregate 
+    discrete throughput using greedy Knapsack selection.
+    """
+    M = len(direct_h_secondary)
+    P2_dist = [0] * M
+    budget = allowed_p2
+
+    # Pre-calculate interference caused by Primary onto each Secondary receiver
+    total_p1_interf = [sum(P1_dist) * cross_h_secondary[i] for i in range(M)]
+
+    # Greedy allocation loop
+    while budget > 0:
+        best_eff = -1.0
+        best_user = -1
+        best_cost = 0
+
+        for i in range(M):
+            # Calculate current SINR in dB
+            sinr_lin = (P2_dist[i] * direct_h_secondary[i]) / (1.0 + total_p1_interf[i])
+            sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
+
+            # Find current rate and next MCS threshold
+            curr_rate = 0
+            next_th = None
+            next_rate = 0
+
+            for th, rate in MCS:
+                if sinr_db >= th:
+                    curr_rate = rate
+                elif next_th is None:
+                    next_th = th
+                    next_rate = rate
+                    break
+
+            # If an upgrade tier exists, evaluate cost and efficiency
+            if next_th is not None:
+                target_sinr_lin = 10 ** (next_th / 10.0)
+                required_p2 = (target_sinr_lin * (1.0 + total_p1_interf[i])) / direct_h_secondary[i]
+                cost = int(math.ceil(required_p2 - P2_dist[i]))
+
+                if 0 < cost <= budget:
+                    value = next_rate - curr_rate
+                    eff = value / float(cost)
+
+                    if eff > best_eff:
+                        best_eff = eff
+                        best_user = i
+                        best_cost = cost
+
+        # If a valid upgrade user was found, purchase the upgrade
+        if best_user != -1:
+            P2_dist[best_user] += best_cost
+            budget -= best_cost
+        else:
+            # If remaining budget cannot push ANY user to a higher MCS level,
+            # dump the leftover budget into the receiver with the strongest direct channel.
+            best_user = max(range(M), key=lambda k: direct_h_secondary[k])
+            P2_dist[best_user] += budget
+            budget = 0
+
+    return P2_dist
+
 def gen_channels(length):
     while len(data) < length:
         primary_transmitter = [8, 35]
@@ -115,7 +179,6 @@ def gen_channels(length):
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
         P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
-
         # 5. Calculate Max Allowed P2 based on Primary MCS Cliffs
         p2_limits = []
         for j in range(N):
@@ -145,10 +208,8 @@ def gen_channels(length):
         if allowed_p2 < M:
             continue
 
-        # 6. P2 Power Distribution
-        inverses_sec = [1.0 / v for v in direct_h_secondary]
-        sum_inverses_sec = sum(inverses_sec)
-        P2_dist = [int(round((inv / sum_inverses_sec) * allowed_p2)) for inv in inverses_sec]
+        # 6. P2 Power Distribution Knapsack Optimization
+        P2_dist = allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
 
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
