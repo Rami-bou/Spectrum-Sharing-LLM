@@ -33,6 +33,7 @@ wave = c / f
 scale_factor = 1e8
 
 secondary_I_max = 8000
+random.seed(10)
 
 random.seed(10)
 
@@ -223,8 +224,8 @@ def primary(state: GraphState) -> GraphState:
     1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
     2. -3.0 dB <= Margin < -0.5 dB: Noticeable rate drop. decision=REJECT, action=DECREASE, severity=MEDIUM.
     3. -0.5 dB <= Margin < 0.0 dB: Just barely pushed over the cliff edge. decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 dB <= Margin <= 1.0 dB: OPTIMAL COOPERATION! Right on the cliff edge with zero rate loss. decision=ACCEPT, severity=LOW.
-    5. 1.0 dB < Margin <= 4.0 dB: Below capacity, wasting secondary power budget. decision=REJECT, action=INCREASE, severity=LOW.
+    4. 0.0 dB <= Margin <= 2.0 dB: OPTIMAL COOPERATION! Right on the cliff edge with zero rate loss. decision=ACCEPT, severity=LOW.
+    5. 2.0 dB < Margin <= 4.0 dB: Below capacity, wasting secondary power budget. decision=REJECT, action=INCREASE, severity=LOW.
     6. Margin > 4.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
     Your critique must explicitly mention the numeric step range for the matched band so the secondary user knows how to adjust.
