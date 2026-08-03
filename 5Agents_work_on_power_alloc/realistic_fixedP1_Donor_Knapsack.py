@@ -22,8 +22,8 @@ from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
 
-N = 4  # Primary receivers
-M = 3  # Secondary receivers
+N = 4  
+M = 3 
 
 data = []
 
@@ -34,7 +34,8 @@ scale_factor = 1e8
 
 secondary_I_max = 8000
 
-# MCS Table: (SINR Threshold in dB, Rate in Mbps)
+random.seed(10)
+
 MCS = [
     (2.0, 15),
     (5.0, 30),
