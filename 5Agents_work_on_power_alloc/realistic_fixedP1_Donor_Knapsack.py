@@ -379,7 +379,7 @@ def get_discrete_rate(sinr_linear):
     sinr_db = 10 * math.log10(sinr_linear)
     
     achieved_rate = 0
-    for threshold, rate in MCS_TABLE:
+    for threshold, rate in MCS:
         if sinr_db >= threshold:
             achieved_rate = rate
         else:
@@ -467,5 +467,5 @@ plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result.png")
+plt.savefig("Result_MCS.png")
 plt.show()
