@@ -79,16 +79,6 @@ def get_mcs_threshold(sinr_db):
             break
     return target_threshold
 
-def get_mcs_threshold(sinr_db):
-    """Finds the minimum required SINR (the cliff edge) for the current state."""
-    target_threshold = -999
-    for threshold, rate in MCS_TABLE:
-        if sinr_db >= threshold:
-            target_threshold = threshold
-        else:
-            break
-    return target_threshold
-
 random.seed(10)
 
 def gen_channels(length):
@@ -211,7 +201,8 @@ def primary(state:GraphState) -> GraphState:
         target_threshold = get_mcs_threshold(baseline_sinr_db)
         
         # 3. Calculate our CURRENT SINR with the secondary's interference
-        interference = total_p2 * state['cross_primary_channels'][j]
+        processing_gain = 200.0 
+        interference = (total_p2 * state['cross_primary_channels'][j]) / processing_gain
         current_sinr_linear = signal / (1.0 + interference)
         current_sinr_db = 10 * math.log10(current_sinr_linear) if current_sinr_linear > 0 else -999
         
