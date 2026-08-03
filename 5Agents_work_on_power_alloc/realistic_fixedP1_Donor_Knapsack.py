@@ -373,7 +373,7 @@ def secondary(state:GraphState) -> GraphState:
         # Step 1
         sinr_state = []
         for i in range(M):
-            sinr = (state['P2'][i] * state['direct_secondary_channels'][i]) / (1.0 + sum(state['P1']) * state['cross_secondary_channels'][i])
+            sinr = (state['P2'][i] * state['direct_secondary_channels'][i]) / (1.0 + sum(state['P1']) * state['cross_primary_channels'][i])
             sinr_db = 10 * math.log10(sinr) if sinr > 0 else -999
             r = 0
             for threshold, rate in MCS:
