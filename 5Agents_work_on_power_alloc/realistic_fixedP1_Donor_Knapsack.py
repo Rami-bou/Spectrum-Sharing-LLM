@@ -586,6 +586,7 @@ for i in range(len(test)):
         "direct_primary_channels": test[i][0],
         "direct_secondary_channels": test[i][1],
         "cross_primary_channels": test[i][2],
+        "cross_secondary_channels": test[i][3],
         "P1": test[i][4],                      
         "P2": [0] * M,
         "primary_critique": "",
