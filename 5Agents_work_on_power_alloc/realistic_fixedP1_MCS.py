@@ -44,16 +44,14 @@ primary_I_max = 1000
 secondary_I_max = 1500
 
 MCS_TABLE = [
-    (2.0, 15),   # MCS 0: requires 2 dB, gives 15 Mbps
-    (5.0, 30),   # MCS 1: requires 5 dB, gives 30 Mbps
-    (9.0, 45),   # MCS 2: requires 9 dB, gives 45 Mbps
-    (11.0, 60),  # MCS 3: requires 11 dB, gives 60 Mbps
-    (15.0, 90),  # MCS 4: requires 15 dB, gives 90 Mbps
-    (18.0, 120), # MCS 5: requires 18 dB, gives 120 Mbps
-    (20.0, 150)  # MCS 6: requires 20 dB, gives 150 Mbps
+    (2.0, 15),  
+    (5.0, 30),  
+    (9.0, 45),  
+    (11.0, 60), 
+    (15.0, 90), 
+    (18.0, 120),
+    (20.0, 150) 
 ]
-
-random.seed(10)
 
 def get_discrete_rate(sinr_linear):
     """Converts linear SINR to dB and maps it to a discrete data rate."""
@@ -67,9 +65,21 @@ def get_discrete_rate(sinr_linear):
         if sinr_db >= threshold:
             achieved_rate = rate
         else:
-            break # Stop at the highest satisfied threshold
+            break
             
     return achieved_rate
+
+def get_mcs_threshold(sinr_db):
+    """Finds the minimum required SINR (the cliff edge) for the current state."""
+    target_threshold = -999
+    for threshold, rate in MCS_TABLE:
+        if sinr_db >= threshold:
+            target_threshold = threshold
+        else:
+            break
+    return target_threshold
+
+random.seed(10)
 
 def gen_channels(length):
     while len(data) < length:
@@ -179,6 +189,7 @@ def primary(state:GraphState) -> GraphState:
 
     total_p2 = sum(state['P2'])
 
+    # calculate the interference
     interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
     primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
     max_gap = max(primary_gaps)
