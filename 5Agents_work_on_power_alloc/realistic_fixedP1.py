@@ -43,7 +43,33 @@ possible_P2 = []
 primary_I_max = 1000
 secondary_I_max = 1500
 
+MCS_TABLE = [
+    (2.0, 15),   # MCS 0: requires 2 dB, gives 15 Mbps
+    (5.0, 30),   # MCS 1: requires 5 dB, gives 30 Mbps
+    (9.0, 45),   # MCS 2: requires 9 dB, gives 45 Mbps
+    (11.0, 60),  # MCS 3: requires 11 dB, gives 60 Mbps
+    (15.0, 90),  # MCS 4: requires 15 dB, gives 90 Mbps
+    (18.0, 120), # MCS 5: requires 18 dB, gives 120 Mbps
+    (20.0, 150)  # MCS 6: requires 20 dB, gives 150 Mbps
+]
+
 random.seed(10)
+
+def get_discrete_rate(sinr_linear):
+    """Converts linear SINR to dB and maps it to a discrete data rate."""
+    if sinr_linear <= 0:
+        return 0
+    
+    sinr_db = 10 * math.log10(sinr_linear)
+    
+    achieved_rate = 0
+    for threshold, rate in MCS_TABLE:
+        if sinr_db >= threshold:
+            achieved_rate = rate
+        else:
+            break # Stop at the highest satisfied threshold
+            
+    return achieved_rate
 
 def gen_channels(length):
     while len(data) < length:
@@ -333,6 +359,23 @@ def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_pri
         
     return se
 
+def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+    """Calculates total Primary Throughput based on discrete MCS levels."""
+    total_throughput_mbps = 0
+    total_P2 = sum(P2_vector)
+    
+    for j in range(len(P1_vector)):
+        signal = P1_vector[j] * direct_h_primary[j]
+        interference_from_secondary = total_P2 * cross_h_primary[j]
+        
+        # Calculate physical linear SINR
+        sinr_linear = signal / (1.0 + interference_from_secondary)
+        
+        # Map to discrete hardware throughput
+        total_throughput_mbps += get_discrete_rate(sinr_linear)
+        
+    return total_throughput_mbps
+
 print("\nStarting Benchmark over Test Dataset...")
 for i in range(len(test)):
     direct_h_pri = test[i][0] 
@@ -357,8 +400,8 @@ for i in range(len(test)):
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    se_pred_list.append(calculate_primary_sum_se(true_p1, pred_p2, direct_h_pri, cross_h_pri))
-    se_true_list.append(calculate_primary_sum_se(true_p1, true_p2, direct_h_pri, cross_h_pri))
+    se_pred_list.append(calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_pri, cross_h_pri))
+    se_true_list.append(calculate_primary_discrete_rate(true_p1, true_p2, direct_h_pri, cross_h_pri))
 
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
