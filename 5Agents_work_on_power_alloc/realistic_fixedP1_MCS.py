@@ -183,18 +183,12 @@ def gen_channels(length):
         if allowed_p2 < M:
             continue
         
-        # distribute the P1 accross the users where the nearest get less power and vise versa
-        inverses = [1.0 / v for v in direct_h_primary]
-        sum_inverses = sum(inverses)
-        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
-
-        inverses = [1.0 / v for v in direct_h_secondary]
-        sum_inverses = sum(inverses)
-        P2_dist = [int(round((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        inverses_p2 = [1.0 / max(v, 1e-6) for v in direct_h_secondary]
+        sum_inverses_p2 = sum(inverses_p2)
+        P2_dist = [int(round((inv / sum_inverses_p2) * allowed_p2)) for inv in inverses_p2]
 
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
-    
     return data
 
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
