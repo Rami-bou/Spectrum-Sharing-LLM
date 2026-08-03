@@ -139,9 +139,48 @@ def gen_channels(length):
             # going from primary transmitter to secondary users
             cross_h_secondary.append(h_normal)
 
-        allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
-        allowed_p2 = int(round(primary_I_max / max(cross_h_primary)))
-        if allowed_p1 < N or allowed_p2 < M:
+        # allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
+        # allowed_p2 = int(round(primary_I_max / max(cross_h_primary)))
+        # if allowed_p1 < N or allowed_p2 < M:
+        #     continue
+
+        base_p1_total = 100 
+        inverses_p1 = [1.0 / max(v, 1e-6) for v in direct_h_primary]
+        sum_inverses_p1 = sum(inverses_p1)
+        P1_dist = [int(round((inv / sum_inverses_p1) * base_p1_total)) for inv in inverses_p1]
+
+        # -------------------------------------------------------------
+        # 2. MCS-Based Ground Truth Calculation for Max Allowed P2
+        # -------------------------------------------------------------
+        max_p2_limits = []
+        for j in range(N):
+            signal = P1_dist[j] * direct_h_primary[j]
+            if signal <= 0:
+                continue
+            
+            baseline_sinr_db = 10 * math.log10(signal)
+            target_threshold = get_mcs_threshold(baseline_sinr_db)
+            
+            # If target threshold is invalid or baseline is too weak, skip sample
+            if target_threshold <= -900:
+                continue
+                
+            min_required_linear_sinr = 10 ** (target_threshold / 10.0)
+            
+            # Maximum allowed interference before dropping below target_threshold
+            max_interf = (signal / min_required_linear_sinr) - 1.0
+            
+            if max_interf > 0 and cross_h_primary[j] > 0:
+                p2_limit_for_user_j = max_interf / cross_h_primary[j]
+                max_p2_limits.append(p2_limit_for_user_j)
+
+        if not max_p2_limits:
+            continue
+
+        allowed_p2 = int(math.floor(min(max_p2_limits)))
+        
+        # Ensure we filter out samples where P2 budget is too tiny to distribute
+        if allowed_p2 < M:
             continue
         
         # distribute the P1 accross the users where the nearest get less power and vise versa
