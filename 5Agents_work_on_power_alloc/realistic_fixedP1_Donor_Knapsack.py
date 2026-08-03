@@ -22,73 +22,46 @@ from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
 
-# number of primary receivers
-N = 4
-# number of secondary receivers
-M = 3
+N = 4  # Primary receivers
+M = 3  # Secondary receivers
 
-repeated = set()
 data = []
 
 f = 2e9
 c = 3e8
 wave = c / f
-P_max = 100.0
-
-I_max = 1000
-P1 = 100
 scale_factor = 1e8
-possible_P2 = []
 
-primary_I_max = 1000
-secondary_I_max = 1500
+secondary_I_max = 8000
 
-MCS_TABLE = [
-    (2.0, 15),  
-    (5.0, 30),  
-    (9.0, 45),  
-    (11.0, 60), 
-    (15.0, 90), 
+# MCS Table: (SINR Threshold in dB, Rate in Mbps)
+MCS = [
+    (2.0, 15),
+    (5.0, 30),
+    (9.0, 45),
+    (11.0, 60),
+    (15.0, 90),
     (18.0, 120),
-    (20.0, 150) 
+    (20.0, 150)
 ]
 
-def get_discrete_rate(sinr_linear):
-    """Converts linear SINR to dB and maps it to a discrete data rate."""
-    if sinr_linear <= 0:
-        return 0
-    
-    sinr_db = 10 * math.log10(sinr_linear)
-    
-    achieved_rate = 0
-    for threshold, rate in MCS_TABLE:
-        if sinr_db >= threshold:
-            achieved_rate = rate
-        else:
-            break
-            
-    return achieved_rate
-
 def get_mcs_threshold(sinr_db):
-    """Finds the minimum required SINR (the cliff edge) for the current state."""
-    target_threshold = -999
-    for threshold, rate in MCS_TABLE:
-        if sinr_db >= threshold:
-            target_threshold = threshold
+    """Finds the minimum required SINR (dB) for the current state."""
+    target_th = -999
+    for th, rate in MCS:
+        if sinr_db >= th:
+            target_th = th
         else:
             break
-    return target_threshold
-
-random.seed(10)
+    return target_th
 
 def gen_channels(length):
     while len(data) < length:
-        # fix positions for transmitters
         primary_transmitter = [8, 35]
-        secondary_transmitter = [5, 13]
+        secondary_transmitter = [5, -20]
 
+        # 1. Primary Channels
         dist__state = random.randint(1, 3)
-
         position_primary_receiver = []
         direct_h_primary = []
         for i in range(N):
@@ -102,10 +75,9 @@ def gen_channels(length):
             position_primary_receiver.append(rp)
             d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
+            direct_h_primary.append(int(round(h * scale_factor, 2)))
 
-            direct_h_primary.append(h_normal)
-
+        # 2. Secondary Channels
         dist__state = random.randint(1, 3)
         position_secondary_receiver = []
         direct_h_secondary = []
@@ -120,72 +92,63 @@ def gen_channels(length):
             position_secondary_receiver.append(rs)
             d = np.sqrt((rs[0]-secondary_transmitter[0])**2 + (rs[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
+            direct_h_secondary.append(int(round(h * scale_factor, 2)))
 
-            direct_h_secondary.append(h_normal)
-
+        # 3. Cross Channels
         cross_h_primary = []
         for pos in position_primary_receiver:
             d = np.sqrt((pos[0]-secondary_transmitter[0])**2 + (pos[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
-            cross_h_primary.append(h_normal)
+            cross_h_primary.append(int(round(h * scale_factor, 2)))
 
         cross_h_secondary = []
         for pos in position_secondary_receiver:
             d = np.sqrt((pos[0]-primary_transmitter[0])**2 + (pos[1]-primary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
-            # going from primary transmitter to secondary users
-            cross_h_secondary.append(h_normal)
+            cross_h_secondary.append(int(round(h * scale_factor, 2)))
 
-        # allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
-        # allowed_p2 = int(round(primary_I_max / max(cross_h_primary)))
-        # if allowed_p1 < N or allowed_p2 < M:
-        #     continue
+        # 4. P1 Power Distribution
+        allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
+        if allowed_p1 < N:
+            continue
 
-        base_p1_total = 100 
-        inverses_p1 = [1.0 / max(v, 1e-6) for v in direct_h_primary]
-        sum_inverses_p1 = sum(inverses_p1)
-        P1_dist = [int(round((inv / sum_inverses_p1) * base_p1_total)) for inv in inverses_p1]
+        inverses = [1.0 / v for v in direct_h_primary]
+        sum_inverses = sum(inverses)
+        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
 
-        # -------------------------------------------------------------
-        # 2. MCS-Based Ground Truth Calculation for Max Allowed P2
-        # -------------------------------------------------------------
-        max_p2_limits = []
+        # 5. Calculate Max Allowed P2 based on Primary MCS Cliffs
+        p2_limits = []
         for j in range(N):
             signal = P1_dist[j] * direct_h_primary[j]
             if signal <= 0:
                 continue
             
+            # Baseline SINR in dB (when P2 = 0)
             baseline_sinr_db = 10 * math.log10(signal)
-            target_threshold = get_mcs_threshold(baseline_sinr_db)
             
-            # If target threshold is invalid or baseline is too weak, skip sample
-            if target_threshold <= -900:
+            # Target MCS cliff threshold
+            target_th = get_mcs_threshold(baseline_sinr_db)
+            if target_th < 0:  # Skip if user can't even reach MCS 0
                 continue
-                
-            min_required_linear_sinr = 10 ** (target_threshold / 10.0)
             
-            # Maximum allowed interference before dropping below target_threshold
-            max_interf = (signal / min_required_linear_sinr) - 1.0
+            # Max allowed linear interference before dropping below target_th
+            min_linear_sinr = 10 ** (target_th / 10.0)
+            max_interference = (signal / min_linear_sinr) - 1.0
             
-            if max_interf > 0 and cross_h_primary[j] > 0:
-                p2_limit_for_user_j = max_interf / cross_h_primary[j]
-                max_p2_limits.append(p2_limit_for_user_j)
+            if max_interference > 0 and cross_h_primary[j] > 0:
+                p2_limits.append(max_interference / cross_h_primary[j])
 
-        if not max_p2_limits:
+        if not p2_limits:
             continue
 
-        allowed_p2 = int(math.floor(min(max_p2_limits)))
-        
-        # Ensure we filter out samples where P2 budget is too tiny to distribute
+        allowed_p2 = int(math.floor(min(p2_limits)))
         if allowed_p2 < M:
             continue
-        
-        inverses_p2 = [1.0 / max(v, 1e-6) for v in direct_h_secondary]
-        sum_inverses_p2 = sum(inverses_p2)
-        P2_dist = [int(round((inv / sum_inverses_p2) * allowed_p2)) for inv in inverses_p2]
+
+        # 6. P2 Power Distribution
+        inverses_sec = [1.0 / v for v in direct_h_secondary]
+        sum_inverses_sec = sum(inverses_sec)
+        P2_dist = [int(round((inv / sum_inverses_sec) * allowed_p2)) for inv in inverses_sec]
 
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
@@ -218,49 +181,52 @@ class PrimaryOutput(BaseModel):
     severity: Literal["HIGH", "MEDIUM", "LOW"] = Field(description="Magnitude of correction needed, independent of direction.")
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
 
-def primary(state:GraphState) -> GraphState:
+def primary(state: GraphState) -> GraphState:
     total_p2 = sum(state['P2'])
     margins = []
     
-    # Calculate the margin for every primary receiver
+    # 1. Calculate the MCS margin for every primary receiver
     for j in range(len(state['P1'])):
         signal = state['P1'][j] * state['direct_primary_channels'][j]
+        if signal <= 0:
+            continue
+            
+        # Baseline SINR in dB (when P2 = 0)
+        baseline_sinr_db = 10 * math.log10(signal)
         
-        # 1. What is our baseline SINR without any secondary interference?
-        baseline_sinr_linear = signal / 1.0 
-        baseline_sinr_db = 10 * math.log10(baseline_sinr_linear) if baseline_sinr_linear > 0 else -999
+        # Target MCS cliff threshold for this receiver
+        target_th = get_mcs_threshold(baseline_sinr_db)
+        if target_th < 0:
+            continue
+            
+        # Actual SINR in dB with current P2 proposal
+        interference = total_p2 * state['cross_primary_channels'][j]
+        actual_sinr_linear = signal / (1.0 + interference)
+        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
         
-        # 2. Find the bottom edge of the MCS interval we belong in
-        target_threshold = get_mcs_threshold(baseline_sinr_db)
-        
-        # 3. Calculate our CURRENT SINR with the secondary's interference
-        processing_gain = 200.0 
-        interference = (total_p2 * state['cross_primary_channels'][j]) / processing_gain
-        current_sinr_linear = signal / (1.0 + interference)
-        current_sinr_db = 10 * math.log10(current_sinr_linear) if current_sinr_linear > 0 else -999
-        
-        # 4. The Margin: Positive = safe in the interval. Negative = fell out of the interval.
-        margin = current_sinr_db - target_threshold
+        # Margin: How far above/below the cliff edge are we?
+        margin = actual_sinr_db - target_th
         margins.append(margin)
 
-    # The network is only as strong as its weakest link
-    worst_margin = min(margins)
-    print(f"Worst MCS Margin: {worst_margin:.2f} dB")
+    # 2. Network safety depends on the weakest receiver
+    worst_margin = min(margins) if margins else -999.0
+    print(f"\n[Primary Evaluator] Worst MCS Margin: {worst_margin:.2f} dB")
 
-    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users' data rates.
+    # 3. LLM Prompt based on MCS Margin Bands
+    prompt_primary = f"""You are the Central Network Evaluator protecting Primary users' discrete data rates.
     You evaluate the 'Worst MCS Margin' (measured in dB). 
-    A positive Margin means the secondary user's interference is safely absorbed by the MCS interval (free zone).
-    A negative Margin means the secondary user pushed the primary user out of its interval, causing data loss.
+    - A positive Margin means secondary interference is safely absorbed within the MCS step (no data loss).
+    - A negative Margin means secondary interference pushed a primary user off their MCS cliff, causing rate loss.
     
-    Follow these exact bands based on the Worst MCS Margin:
-    1. Margin < -3.0: EMERGENCY, massive data loss. decision=REJECT, action=DECREASE, severity=HIGH.
-    2. -3.0 <= Margin < -0.5: Significant data drop. decision=REJECT, action=DECREASE, severity=MEDIUM.
-    3. -0.5 <= Margin < 0.0: Just barely pushed over the cliff. decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 <= Margin <= 1.0: Perfect optimization. Right at the edge, maximizing network use. decision=ACCEPT, severity=LOW.
-    5. 1.0 < Margin <= 5.0: Plenty of free interval space left. decision=REJECT, action=INCREASE, severity=MEDIUM.
-    6. Margin > 5.0: Huge amount of wasted free space. decision=REJECT, action=INCREASE, severity=HIGH.
+    Follow these exact decision bands:
+    1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. -3.0 dB <= Margin < -0.5 dB: Noticeable rate drop. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. -0.5 dB <= Margin < 0.0 dB: Just barely pushed over the cliff edge. decision=REJECT, action=DECREASE, severity=LOW.
+    4. 0.0 dB <= Margin <= 1.0 dB: OPTIMAL COOPERATION! Right on the cliff edge with zero rate loss. decision=ACCEPT, severity=LOW.
+    5. 1.0 dB < Margin <= 4.0 dB: Below capacity, wasting secondary power budget. decision=REJECT, action=INCREASE, severity=LOW.
+    6. Margin > 4.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
-    Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
+    Your critique must explicitly mention the numeric step range for the matched band so the secondary user knows how to adjust.
 
     Return JSON matching the schema.
     """
@@ -269,8 +235,8 @@ def primary(state:GraphState) -> GraphState:
     resp = structured_critic.invoke([
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
-        P2 Allocations: {state['P2']}
-        Worst MCS Margin: {worst_margin:.2f} dB
+        P2 Allocations proposed: {state['P2']}
+        Worst Primary MCS Margin: {worst_margin:.2f} dB
         """
         )
     ])
@@ -278,6 +244,7 @@ def primary(state:GraphState) -> GraphState:
     state['primary_critique'] = resp.critique
     state['primary_decision'] = resp.decision
     state['iteration'] += 1
+    
     print(f"[Decision]: {resp.decision} ({resp.severity})")
     print(f"[Critique]: {resp.critique}")
 
@@ -420,23 +387,6 @@ def calculate_primary_sum_se(P1_vector, P2_vector, direct_h_primary, cross_h_pri
         
     return se
 
-def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
-    """Calculates total Primary Throughput based on discrete MCS levels."""
-    total_throughput_mbps = 0
-    total_P2 = sum(P2_vector)
-    
-    for j in range(len(P1_vector)):
-        signal = P1_vector[j] * direct_h_primary[j]
-        interference_from_secondary = total_P2 * cross_h_primary[j]
-        
-        # Calculate physical linear SINR
-        sinr_linear = signal / (1.0 + interference_from_secondary)
-        
-        # Map to discrete hardware throughput
-        total_throughput_mbps += get_discrete_rate(sinr_linear)
-        
-    return total_throughput_mbps
-
 print("\nStarting Benchmark over Test Dataset...")
 for i in range(len(test)):
     direct_h_pri = test[i][0] 
@@ -448,7 +398,7 @@ for i in range(len(test)):
         "direct_primary_channels": test[i][0],
         "direct_secondary_channels": test[i][1],
         "cross_primary_channels": test[i][2],
-        "P1": test[i][4],
+        "P1": test[i][4],                      
         "P2": [0] * M,
         "primary_critique": "",
         "primary_decision": "",
@@ -463,8 +413,8 @@ for i in range(len(test)):
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    se_pred_list.append(calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_pri, cross_h_pri))
-    se_true_list.append(calculate_primary_discrete_rate(true_p1, true_p2, direct_h_pri, cross_h_pri))
+    se_pred_list.append(calculate_primary_sum_se(true_p1, pred_p2, direct_h_pri, cross_h_pri))
+    se_true_list.append(calculate_primary_sum_se(true_p1, true_p2, direct_h_pri, cross_h_pri))
 
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
@@ -500,5 +450,5 @@ plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_MCS.png")
+plt.savefig("Result.png")
 plt.show()
