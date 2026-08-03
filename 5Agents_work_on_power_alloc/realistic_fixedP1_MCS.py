@@ -79,6 +79,16 @@ def get_mcs_threshold(sinr_db):
             break
     return target_threshold
 
+def get_mcs_threshold(sinr_db):
+    """Finds the minimum required SINR (the cliff edge) for the current state."""
+    target_threshold = -999
+    for threshold, rate in MCS_TABLE:
+        if sinr_db >= threshold:
+            target_threshold = threshold
+        else:
+            break
+    return target_threshold
+
 random.seed(10)
 
 def gen_channels(length):
@@ -186,27 +196,45 @@ class PrimaryOutput(BaseModel):
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
 
 def primary(state:GraphState) -> GraphState:
-
     total_p2 = sum(state['P2'])
-
-    # calculate the interference
-    interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
-    primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
-    max_gap = max(primary_gaps)
-    print(f"Gap: {primary_gaps}")
-
-    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
-    You will receive the caused interference on your channel by the secondary user's power allocation.
-    The Gap is defined as: Gap = caused_interference - {primary_I_max}. A positive Gap means the secondary is causing too much interference. A negative Gap means the secondary is well under the threshold and wasting power budget.
+    margins = []
     
-    Follow these exact bands based on the Gap:
-    1. Gap > 1000: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
-    2. 500 <= Gap <= 999: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
-    3. 100 < Gap <= 499: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
-    5. 0 < Gap <= 100: Slightly above threshold, but acceptable. decision=ACCEPT.
-    4. Gap <= -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=HIGH.
-    6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT.
-    7. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
+    # Calculate the margin for every primary receiver
+    for j in range(len(state['P1'])):
+        signal = state['P1'][j] * state['direct_primary_channels'][j]
+        
+        # 1. What is our baseline SINR without any secondary interference?
+        baseline_sinr_linear = signal / 1.0 
+        baseline_sinr_db = 10 * math.log10(baseline_sinr_linear) if baseline_sinr_linear > 0 else -999
+        
+        # 2. Find the bottom edge of the MCS interval we belong in
+        target_threshold = get_mcs_threshold(baseline_sinr_db)
+        
+        # 3. Calculate our CURRENT SINR with the secondary's interference
+        interference = total_p2 * state['cross_primary_channels'][j]
+        current_sinr_linear = signal / (1.0 + interference)
+        current_sinr_db = 10 * math.log10(current_sinr_linear) if current_sinr_linear > 0 else -999
+        
+        # 4. The Margin: Positive = safe in the interval. Negative = fell out of the interval.
+        margin = current_sinr_db - target_threshold
+        margins.append(margin)
+
+    # The network is only as strong as its weakest link
+    worst_margin = min(margins)
+    print(f"Worst MCS Margin: {worst_margin:.2f} dB")
+
+    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users' data rates.
+    You evaluate the 'Worst MCS Margin' (measured in dB). 
+    A positive Margin means the secondary user's interference is safely absorbed by the MCS interval (free zone).
+    A negative Margin means the secondary user pushed the primary user out of its interval, causing data loss.
+    
+    Follow these exact bands based on the Worst MCS Margin:
+    1. Margin < -3.0: EMERGENCY, massive data loss. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. -3.0 <= Margin < -0.5: Significant data drop. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. -0.5 <= Margin < 0.0: Just barely pushed over the cliff. decision=REJECT, action=DECREASE, severity=LOW.
+    4. 0.0 <= Margin <= 1.0: Perfect optimization. Right at the edge, maximizing network use. decision=ACCEPT, severity=LOW.
+    5. 1.0 < Margin <= 5.0: Plenty of free interval space left. decision=REJECT, action=INCREASE, severity=MEDIUM.
+    6. Margin > 5.0: Huge amount of wasted free space. decision=REJECT, action=INCREASE, severity=HIGH.
 
     Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
 
@@ -218,10 +246,8 @@ def primary(state:GraphState) -> GraphState:
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
         P2 Allocations: {state['P2']}
-        Worst-Case Primary Gap: {max_gap}
+        Worst MCS Margin: {worst_margin:.2f} dB
         """
-        # Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
-
         )
     ])
 
@@ -395,8 +421,10 @@ for i in range(len(test)):
     true_p2 = test[i][5] 
     
     initial_state = {
+        "direct_primary_channels": test[i][0],
         "direct_secondary_channels": test[i][1],
         "cross_primary_channels": test[i][2],
+        "P1": test[i][4],
         "P2": [0] * M,
         "primary_critique": "",
         "primary_decision": "",
