@@ -57,28 +57,39 @@ def get_mcs_threshold(sinr_db):
 
 def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
     """
-    Distributes allowed_p2 among secondary receivers to maximize aggregate 
-    discrete throughput using greedy Knapsack selection.
+    Distributes allowed_p2 with a Fairness Guarantee (Phase 1), 
+    followed by Knapsack optimization (Phase 2).
     """
     M = len(direct_h_secondary)
     P2_dist = [0] * M
     budget = allowed_p2
 
-    # Pre-calculate interference caused by Primary onto each Secondary receiver
     total_p1_interf = [sum(P1_dist) * cross_h_secondary[i] for i in range(M)]
+    
+    # PHASE 1: FAIRNESS GUARANTEE (Ensure everyone hits at least MCS 0)
+    mcs0_lin = 10 ** (MCS[0][0] / 10.0) # 2.0 dB
+    for i in range(M):
+        req_p2 = (mcs0_lin * (1.0 + total_p1_interf[i])) / direct_h_secondary[i]
+        cost = int(math.ceil(req_p2))
+        
+        if cost <= budget:
+            P2_dist[i] = cost
+            budget -= cost
+        else:
+            P2_dist[i] = budget
+            budget = 0
+            break # Run out of power before everyone gets MCS 0
 
-    # Greedy allocation loop
+    # PHASE 2: GREEDY KNAPSACK (Maximize throughput with remaining budget)
     while budget > 0:
         best_eff = -1.0
         best_user = -1
         best_cost = 0
 
         for i in range(M):
-            # Calculate current SINR in dB
             sinr_lin = (P2_dist[i] * direct_h_secondary[i]) / (1.0 + total_p1_interf[i])
             sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
 
-            # Find current rate and next MCS threshold
             curr_rate = 0
             next_th = None
             next_rate = 0
@@ -91,7 +102,6 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
                     next_rate = rate
                     break
 
-            # If an upgrade tier exists, evaluate cost and efficiency
             if next_th is not None:
                 target_sinr_lin = 10 ** (next_th / 10.0)
                 required_p2 = (target_sinr_lin * (1.0 + total_p1_interf[i])) / direct_h_secondary[i]
@@ -106,13 +116,10 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
                         best_user = i
                         best_cost = cost
 
-        # If a valid upgrade user was found, purchase the upgrade
         if best_user != -1:
             P2_dist[best_user] += best_cost
             budget -= best_cost
         else:
-            # If remaining budget cannot push ANY user to a higher MCS level,
-            # dump the leftover budget into the receiver with the strongest direct channel.
             best_user = max(range(M), key=lambda k: direct_h_secondary[k])
             P2_dist[best_user] += budget
             budget = 0
@@ -454,37 +461,39 @@ def secondary(state:GraphState) -> GraphState:
         ###################
         # Step 6: Distribute the Budget (Knapsack)
         budget = resp.step
-        new_P2 = list(state['P2'])
+        new_P2 = list(state['P2']) 
         
         if budget > 0:
-            # INCREASE logic: Be greedy! Buy the most efficient upgrades first.
+            # PHASE 1 (Fairness): Rescue anyone currently below MCS 0
+            for i in range(M):
+                if sinr_state[i][1] == 0:  # If current rate is 0
+                    # p2_required[i] already holds the cost to reach MCS 0
+                    required_watts = int(math.ceil(p2_required[i] - new_P2[i]))
+                    if 0 < required_watts <= budget:
+                        new_P2[i] += required_watts
+                        budget -= required_watts
+
+            # PHASE 2 (Greedy): Spend remainder on most efficient upgrades
             for eff, i, cst, curr_rate in rank:
-                # We need to round up the cost to ensure we actually cross the threshold
                 required_watts = int(math.ceil(cst))
-                
+                # Only upgrade if we have budget AND it's an actual upgrade (cst > 0)
                 if budget >= required_watts and required_watts > 0:
                     new_P2[i] += required_watts
                     budget -= required_watts
                     
-            # If we have leftover budget that isn't enough to upgrade ANY receiver to the next level,
-            # we dump it into the top-ranked receiver to get them closer for the next round.
             if budget > 0:
                 top_index = rank[0][1]
                 new_P2[top_index] += budget
                 
         elif budget < 0:
-            # DECREASE logic: The primary user is mad. We need to cut power.
-            # We cut from the "excess margin" (power that isn't contributing to the current data rate).
+            # DECREASE logic (Donor Concept): Cut excess margin first
             budget_to_cut = abs(budget)
-            
-            # Sort by lowest efficiency first, so we penalize the worst links
             rank.sort(key=lambda x: x[0]) 
             
             for eff, i, cst, curr_rate in rank:
                 if budget_to_cut <= 0:
                     break
                 
-                # Find the absolute minimum power needed to maintain the CURRENT rate
                 min_sinr_db = -999
                 for th, r in MCS:
                     if r == curr_rate:
@@ -496,17 +505,13 @@ def secondary(state:GraphState) -> GraphState:
                     interference = sum(state['P1']) * state['cross_secondary_channels'][i]
                     min_p2 = (min_sinr_lin * (1.0 + interference)) / state['direct_secondary_channels'][i]
                     
-                    # The "Donor" concept: excess power that does nothing for us
                     excess = new_P2[i] - min_p2 
-                    
                     if excess > 0:
-                        # Cut as much of the excess as we can without dropping our rate
                         cut = min(budget_to_cut, int(math.floor(excess)))
                         new_P2[i] -= cut
                         budget_to_cut -= cut
             
-            # If we STILL need to cut power to satisfy the Primary, we are forced to drop rates.
-            # We blindly subtract from whoever has power left.
+            # If forced to cut into data rates, try to spare those at risk of hitting 0
             if budget_to_cut > 0:
                 for i in range(M):
                     if new_P2[i] > 0:
@@ -515,8 +520,7 @@ def secondary(state:GraphState) -> GraphState:
                         budget_to_cut -= cut
 
         state['P2'] = new_P2
-        print(f"New power after Knapsack distribution: {state['P2']}")
-
+        print(f"New power after Fair-Knapsack distribution: {state['P2']}")
     return state
 
 def build_prompt(train):
@@ -669,5 +673,5 @@ plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_MCS.png")
+plt.savefig("test.png")
 plt.show()
