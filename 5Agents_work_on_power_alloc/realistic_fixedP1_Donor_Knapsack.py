@@ -210,7 +210,7 @@ def gen_channels(length):
 
         # 6. P2 Power Distribution Knapsack Optimization
         P2_dist = allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
-
+        print(f"Length of direct_h_primary: {len(direct_h_primary)}, direct_h_secondary: {len(direct_h_secondary)}, cross_h_primary: {len(cross_h_primary)}, cross_h_secondary: {len(cross_h_secondary)}, P1_dist: {len(P1_dist)}, P2_dist: {len(P2_dist)}")
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
