@@ -153,38 +153,53 @@ def secondary(state:GraphState) -> GraphState:
         
         ###################
         # Step 6: Distribute the Budget (Knapsack)
+        # Step 5: Calculate Log-Utility Efficiency and Rank
+        rank = []
+        for i in range(M):
+            current_rate = sinr_state[i][1]
+            
+            next_rate = current_rate
+            for th, r in MCS:
+                if r > current_rate:
+                    next_rate = r
+                    break
+                    
+            # Logarithmic Utility Gain for Proportional Fairness
+            log_curr = math.log(1.0 + current_rate)
+            log_next = math.log(1.0 + next_rate)
+            value = log_next - log_curr
+            
+            efficiency = (value / cost[i]) if cost[i] > 0 else 0 
+            rank.append((efficiency, i, cost[i], current_rate))
+            
+        rank.sort(key=lambda x: x[0], reverse=True)
+        
+        ###################
+        # Step 6: Distribute the Budget (Log-Proportional Knapsack)
         budget = resp.step
-        new_P2 = list(state['P2'])
+        new_P2 = list(state['P2']) 
         
         if budget > 0:
-            # INCREASE logic: Be greedy! Buy the most efficient upgrades first.
+            # INCREASE logic: Buy highest log-utility efficiency upgrades first
             for eff, i, cst, curr_rate in rank:
-                # We need to round up the cost to ensure we actually cross the threshold
                 required_watts = int(math.ceil(cst))
-                
                 if budget >= required_watts and required_watts > 0:
                     new_P2[i] += required_watts
                     budget -= required_watts
                     
-            # If we have leftover budget that isn't enough to upgrade ANY receiver to the next level,
-            # we dump it into the top-ranked receiver to get them closer for the next round.
             if budget > 0:
                 top_index = rank[0][1]
                 new_P2[top_index] += budget
                 
         elif budget < 0:
-            # DECREASE logic: The primary user is mad. We need to cut power.
-            # We cut from the "excess margin" (power that isn't contributing to the current data rate).
+            # DECREASE logic (Donor Concept): Cut excess power first
             budget_to_cut = abs(budget)
-            
-            # Sort by lowest efficiency first, so we penalize the worst links
             rank.sort(key=lambda x: x[0]) 
             
             for eff, i, cst, curr_rate in rank:
                 if budget_to_cut <= 0:
                     break
                 
-                # Find the absolute minimum power needed to maintain the CURRENT rate
                 min_sinr_db = -999
                 for th, r in MCS:
                     if r == curr_rate:
@@ -196,17 +211,12 @@ def secondary(state:GraphState) -> GraphState:
                     interference = sum(state['P1']) * state['cross_secondary_channels'][i]
                     min_p2 = (min_sinr_lin * (1.0 + interference)) / state['direct_secondary_channels'][i]
                     
-                    # The "Donor" concept: excess power that does nothing for us
                     excess = new_P2[i] - min_p2 
-                    
                     if excess > 0:
-                        # Cut as much of the excess as we can without dropping our rate
                         cut = min(budget_to_cut, int(math.floor(excess)))
                         new_P2[i] -= cut
                         budget_to_cut -= cut
             
-            # If we STILL need to cut power to satisfy the Primary, we are forced to drop rates.
-            # We blindly subtract from whoever has power left.
             if budget_to_cut > 0:
                 for i in range(M):
                     if new_P2[i] > 0:
@@ -215,7 +225,7 @@ def secondary(state:GraphState) -> GraphState:
                         budget_to_cut -= cut
 
         state['P2'] = new_P2
-        print(f"New power after Knapsack distribution: {state['P2']}")
+        print(f"New power after Log-Fairness Knapsack distribution: {state['P2']}")
 
     return state
 
