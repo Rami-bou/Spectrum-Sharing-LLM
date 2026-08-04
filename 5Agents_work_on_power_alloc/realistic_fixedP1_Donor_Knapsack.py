@@ -347,17 +347,17 @@ def secondary(state:GraphState) -> GraphState:
         
         [DECREASE ACTIONS - Negative Step Values]
         - Severity HIGH (Margin < -3.0 dB): EMERGENCY. You completely jammed the Primary user. 
-          Action: Output a large negative step (e.g., -30 to -50).
+          Action: Output a large negative step (e.g., -20 to -40).
         - Severity MEDIUM (-3.0 to -0.5 dB): Noticeable rate drop. 
-          Action: Output a moderate negative step (e.g., -10 to -25).
+          Action: Output a moderate negative step (e.g., -10 to -15).
         - Severity LOW (-0.5 to 0.0 dB): Just barely pushed over the cliff edge. 
           Action: Output a tiny negative step (e.g., -1 to -5).
           
         [INCREASE ACTIONS - Positive Step Values]
         - Severity LOW (2.0 to 4.0 dB): The primary is safe, and you have a small amount of excess room. 
-          Action: Output a small positive step (e.g., +5 to +15).
+          Action: Output a small positive step (e.g., +5 to +10).
         - Severity HIGH (Margin > 4.0 dB): The primary has a massive excess margin. You are leaving free throughput on the table. 
-          Action: Output a large positive step (e.g., +20 to +50).
+          Action: Output a large positive step (e.g., +20 to +40).
 
         CRITICAL RULES:
         1. Always output a NEGATIVE integer if the action is DECREASE.
