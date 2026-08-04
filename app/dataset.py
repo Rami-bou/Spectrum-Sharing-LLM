@@ -3,8 +3,8 @@ import numpy as np
 import math
 from dotenv import load_dotenv
 
-N = 4  
-M = 3 
+N = 5  
+M = 5 
 
 data = []
 
