@@ -45,6 +45,16 @@ MCS = [
     (20.0, 150)
 ]
 
+MCS_SECONDARY = [
+    (-27.01, 15),
+    (-23.61, 30),
+    (-21.70, 45),
+    (-19.37, 60),
+    (-16.51, 90),
+    (-12.97, 120),
+    (-7.86, 150)
+]
+
 def get_mcs_threshold(sinr_db):
     """Finds the minimum required SINR (dB) for the current state."""
     target_th = -999
@@ -56,31 +66,11 @@ def get_mcs_threshold(sinr_db):
     return target_th
 
 def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
-    """
-    Distributes allowed_p2 with a Fairness Guarantee (Phase 1), 
-    followed by Knapsack optimization (Phase 2).
-    """
     M = len(direct_h_secondary)
     P2_dist = [0] * M
     budget = allowed_p2
-
     total_p1_interf = [sum(P1_dist) * cross_h_secondary[i] for i in range(M)]
-    
-    # PHASE 1: FAIRNESS GUARANTEE (Ensure everyone hits at least MCS 0)
-    mcs0_lin = 10 ** (MCS[0][0] / 10.0) # 2.0 dB
-    for i in range(M):
-        req_p2 = (mcs0_lin * (1.0 + total_p1_interf[i])) / direct_h_secondary[i]
-        cost = int(math.ceil(req_p2))
-        
-        if cost <= budget:
-            P2_dist[i] = cost
-            budget -= cost
-        else:
-            P2_dist[i] = budget
-            budget = 0
-            break # Run out of power before everyone gets MCS 0
 
-    # PHASE 2: GREEDY KNAPSACK (Maximize throughput with remaining budget)
     while budget > 0:
         best_eff = -1.0
         best_user = -1
@@ -94,7 +84,7 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
             next_th = None
             next_rate = 0
 
-            for th, rate in MCS:
+            for th, rate in MCS_SECONDARY:  # FIX: was MCS
                 if sinr_db >= th:
                     curr_rate = rate
                 elif next_th is None:
@@ -394,33 +384,26 @@ def secondary(state:GraphState) -> GraphState:
         # Step 1
         sinr_state = []
         for i in range(M):
-            sinr = (state['P2'][i] * state['direct_secondary_channels'][i]) / (1.0 + sum(state['P1']) * state['cross_primary_channels'][i])
+            # FIX: was state['cross_primary_channels'][i] — wrong array (secondary->primary
+            # interference, length N=4) instead of primary->secondary interference (length M=3)
+            sinr = (state['P2'][i] * state['direct_secondary_channels'][i]) / (1.0 + sum(state['P1']) * state['cross_secondary_channels'][i])
             sinr_db = 10 * math.log10(sinr) if sinr > 0 else -999
             r = 0
-            for threshold, rate in MCS:
+            for threshold, rate in MCS_SECONDARY:  # FIX: was MCS
                 if sinr_db >= threshold:
                     r = rate
             sinr_state.append((sinr_db, r))
-        # Step 2
-        # next_sinr_target = []
-        # for sinr, rate in sinr_state:
-        #     for i in range(len(MCS)):
-        #         if rate == MCS[i][1]:
-        #             sinr_lin = 10**(MCS[i+1][0]/10.0) if i+1 < len(MCS) else 10 ** (MCS[i][0]/10.0)
-        #             next_sinr_target.append(sinr_lin)
 
+        # Step 2
         next_sinr_target = []
         for sinr_db, rate in sinr_state:
             target_th_db = None
-            
-            for th, r in MCS:
+            for th, r in MCS_SECONDARY:  # FIX: was MCS
                 if r > rate:
                     target_th_db = th
                     break
-    
             if target_th_db is None:
-                target_th_db = MCS[-1][0] 
-                
+                target_th_db = MCS_SECONDARY[-1][0]  # FIX: was MCS[-1][0]
             sinr_lin = 10 ** (target_th_db / 10.0)
             next_sinr_target.append(sinr_lin)
 
@@ -438,80 +421,54 @@ def secondary(state:GraphState) -> GraphState:
         rank = []
         for i in range(M):
             current_rate = sinr_state[i][1]
-            
-            # Find the next rate (Value)
             next_rate = current_rate
-            for th, r in MCS:
+            for th, r in MCS_SECONDARY:  # FIX: was MCS
                 if r > current_rate:
                     next_rate = r
                     break
-                    
             value = next_rate - current_rate
-            
-            # Efficiency = Mbps gained per Watt spent. 
-            # (Prevent division by zero if cost is somehow 0 or negative)
             efficiency = (value / cost[i]) if cost[i] > 0 else 0 
-            
-            # Store as a tuple: (efficiency, receiver_index, cost, current_rate)
             rank.append((efficiency, i, cost[i], current_rate))
-            
-        # Sort receivers by highest efficiency first
+
         rank.sort(key=lambda x: x[0], reverse=True)
-        
+
         ###################
         # Step 6: Distribute the Budget (Knapsack)
         budget = resp.step
-        new_P2 = list(state['P2']) 
-        
-        if budget > 0:
-            # PHASE 1 (Fairness): Rescue anyone currently below MCS 0
-            for i in range(M):
-                if sinr_state[i][1] == 0:  # If current rate is 0
-                    # p2_required[i] already holds the cost to reach MCS 0
-                    required_watts = int(math.ceil(p2_required[i] - new_P2[i]))
-                    if 0 < required_watts <= budget:
-                        new_P2[i] += required_watts
-                        budget -= required_watts
+        new_P2 = list(state['P2'])
 
-            # PHASE 2 (Greedy): Spend remainder on most efficient upgrades
+        if budget > 0:
             for eff, i, cst, curr_rate in rank:
                 required_watts = int(math.ceil(cst))
-                # Only upgrade if we have budget AND it's an actual upgrade (cst > 0)
                 if budget >= required_watts and required_watts > 0:
                     new_P2[i] += required_watts
                     budget -= required_watts
-                    
             if budget > 0:
                 top_index = rank[0][1]
                 new_P2[top_index] += budget
-                
+
         elif budget < 0:
-            # DECREASE logic (Donor Concept): Cut excess margin first
             budget_to_cut = abs(budget)
-            rank.sort(key=lambda x: x[0]) 
-            
+            rank.sort(key=lambda x: x[0])
+
             for eff, i, cst, curr_rate in rank:
                 if budget_to_cut <= 0:
                     break
-                
                 min_sinr_db = -999
-                for th, r in MCS:
+                for th, r in MCS_SECONDARY:  # FIX: was MCS
                     if r == curr_rate:
                         min_sinr_db = th
                         break
-                        
                 if min_sinr_db != -999:
                     min_sinr_lin = 10 ** (min_sinr_db / 10.0)
                     interference = sum(state['P1']) * state['cross_secondary_channels'][i]
                     min_p2 = (min_sinr_lin * (1.0 + interference)) / state['direct_secondary_channels'][i]
-                    
-                    excess = new_P2[i] - min_p2 
+                    excess = new_P2[i] - min_p2
                     if excess > 0:
                         cut = min(budget_to_cut, int(math.floor(excess)))
                         new_P2[i] -= cut
                         budget_to_cut -= cut
-            
-            # If forced to cut into data rates, try to spare those at risk of hitting 0
+
             if budget_to_cut > 0:
                 for i in range(M):
                     if new_P2[i] > 0:
@@ -520,7 +477,8 @@ def secondary(state:GraphState) -> GraphState:
                         budget_to_cut -= cut
 
         state['P2'] = new_P2
-        print(f"New power after Fair-Knapsack distribution: {state['P2']}")
+        print(f"New power after Knapsack distribution: {state['P2']}")
+
     return state
 
 def build_prompt(train):
