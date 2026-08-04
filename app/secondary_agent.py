@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 import math
 from state import GraphState, llm
-from dataset import gen_channels
+from dataset import gen_channels, MCS, M
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")

@@ -7,7 +7,7 @@ from langchain.messages import SystemMessage
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 import math
-from dataset import get_mcs_threshold
+from dataset import get_mcs_threshold, MCS, M
 from state import GraphState, llm
 
 class PrimaryOutput(BaseModel):
