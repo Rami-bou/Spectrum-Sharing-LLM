@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 import math
 from dataset import get_mcs_threshold
-from graph import GraphState, llm
+from state import GraphState, llm
 
 class PrimaryOutput(BaseModel):
     decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")

@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 import math
 from main import MCS, M, prompt_secondary_allocation
-from graph import GraphState, llm
+from state import GraphState, llm
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
