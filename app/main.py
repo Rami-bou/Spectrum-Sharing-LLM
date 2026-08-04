@@ -3,26 +3,8 @@ import math
 import numpy as np
 from graph import app
 import matplotlib.pyplot as plt
+from secondary_agent import test
 
-def build_prompt(train):
-    prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
-    Your job is to allocate a transmission power for each one of your receivers.
-    Here is some examples on good allocations based on the channel states:\n
-    """
-    for i in range(len(train)):
-        prompt_primary += f"""
-        If the secondary channels are {train[i][1]}
-        Then the Power (P2) allocation are: {train[i][5]}    
-        """
-    
-    prompt_primary += "\nReturn JSON matching the schema."
-
-    return prompt_primary
-
-data = gen_channels(120)
-train = data[:90]
-test = data[90:100]
-prompt_secondary_allocation = build_prompt(train)
 all_pred_P2 = []
 all_true_P2 = []
 se_pred_list = []

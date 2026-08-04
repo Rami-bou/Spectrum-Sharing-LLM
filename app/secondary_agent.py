@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 
 import math
-from main import MCS, M, prompt_secondary_allocation
 from state import GraphState, llm
+from dataset import gen_channels
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
@@ -218,3 +218,23 @@ def secondary(state:GraphState) -> GraphState:
         print(f"New power after Knapsack distribution: {state['P2']}")
 
     return state
+
+def build_prompt(train):
+    prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
+    Your job is to allocate a transmission power for each one of your receivers.
+    Here is some examples on good allocations based on the channel states:\n
+    """
+    for i in range(len(train)):
+        prompt_primary += f"""
+        If the secondary channels are {train[i][1]}
+        Then the Power (P2) allocation are: {train[i][5]}    
+        """
+    
+    prompt_primary += "\nReturn JSON matching the schema."
+
+    return prompt_primary
+
+data = gen_channels(120)
+train = data[:90]
+test = data[90:100]
+prompt_secondary_allocation = build_prompt(train)
