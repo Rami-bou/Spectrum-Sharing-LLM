@@ -23,7 +23,7 @@ import math
 from dotenv import load_dotenv
 
 N = 4  
-M = 3 
+M = 5
 
 data = []
 
