@@ -392,21 +392,17 @@ def secondary(state:GraphState) -> GraphState:
         for sinr_db, rate in sinr_state:
             target_th_db = None
             
-            # Look for the first threshold that gives a higher rate
             for th, r in MCS:
                 if r > rate:
                     target_th_db = th
                     break
-            
-            # If target_th_db is still None, they are already at the max rate (150 Mbps)
-            # So their "next" target is simply maintaining that top tier
+    
             if target_th_db is None:
                 target_th_db = MCS[-1][0] 
                 
-            # Convert the dB threshold to linear SINR and append
             sinr_lin = 10 ** (target_th_db / 10.0)
             next_sinr_target.append(sinr_lin)
-            
+
         # Step 3
         p2_required = []
         for i in range(M):
@@ -525,14 +521,14 @@ def build_prompt(train):
     return prompt_primary
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
-  print("Finalizer...\n")
-  if state["iteration"] > 3:
-    return "finalize"
+    print("Finalizer...\n")
+    if state["iteration"] > 3:
+        return "finalize"
+    # earsly stop
+    if state['primary_decision'] == "ACCEPT":
+        return "finalize"
 
-  if state['primary_decision'] == "REJECT":
     return "revise"
-
-  return "finalize"
 
 workflow = StateGraph(GraphState)
 
