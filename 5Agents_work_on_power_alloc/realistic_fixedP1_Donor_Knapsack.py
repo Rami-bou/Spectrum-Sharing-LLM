@@ -337,18 +337,32 @@ def secondary(state:GraphState) -> GraphState:
         state['P2'] = resp.allocation_secondary
 
     else:
-        prompt = f"""You are a secondary user in a wireless communication environment.
-        Based on the received critique, you adjust your P2 proposal.
-        You add or substract depends on the action received from primary user.
-        You decide the step based on the P2 history and the corresponding caused interference, and you related them with the severity, so you can know whether we are far or near to the best P2.
-        The sing of the step (+ or -) depends on the action received as well.
+        prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
+        Your goal is to find the maximum possible Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate. 
         
-        Severity-to-step-size guide (same bands the primary user uses):
-        - HIGH: step magnitude roughly 20 to 30
-        - MEDIUM: step magnitude roughly 10 to 20
-        - LOW: step magnitude roughly 1 to 10
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB. 
+        Based on the Primary's critique, you must output an integer `step` to adjust your total P2 power budget.
+        
+        Use this exact mapping to determine your step size based on the Primary's Margin and Severity:
+        
+        [DECREASE ACTIONS - Negative Step Values]
+        - Severity HIGH (Margin < -3.0 dB): EMERGENCY. You completely jammed the Primary user. 
+          Action: Output a large negative step (e.g., -30 to -50).
+        - Severity MEDIUM (-3.0 to -0.5 dB): Noticeable rate drop. 
+          Action: Output a moderate negative step (e.g., -10 to -25).
+        - Severity LOW (-0.5 to 0.0 dB): Just barely pushed over the cliff edge. 
+          Action: Output a tiny negative step (e.g., -1 to -5).
+          
+        [INCREASE ACTIONS - Positive Step Values]
+        - Severity LOW (2.0 to 4.0 dB): The primary is safe, and you have a small amount of excess room. 
+          Action: Output a small positive step (e.g., +5 to +15).
+        - Severity HIGH (Margin > 4.0 dB): The primary has a massive excess margin. You are leaving free throughput on the table. 
+          Action: Output a large positive step (e.g., +20 to +50).
 
-        Do not repeat the exact same step as your last one if the situation (gap/severity) has changed - check your own step history below.
+        CRITICAL RULES:
+        1. Always output a NEGATIVE integer if the action is DECREASE.
+        2. Always output a POSITIVE integer if the action is INCREASE.
+        3. Review your `delta_hist` to avoid repeating the exact same failed step size. If you are bouncing back and forth over the cliff, cut your step size in half.
 
         Return JSON matching the schema.
         """
@@ -570,7 +584,7 @@ def get_discrete_rate(sinr_linear):
         if sinr_db >= threshold:
             achieved_rate = rate
         else:
-            break # Stop at the highest satisfied threshold
+            break
             
     return achieved_rate
 
