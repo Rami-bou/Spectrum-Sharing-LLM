@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 import math
 from state import GraphState, llm
-from dataset import gen_channels, MCS, M
+from dataset import gen_channels, MCS, M, allocate_p2_knapsack_optimal
 
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
@@ -81,151 +81,23 @@ def secondary(state:GraphState) -> GraphState:
 
         total_p2 = sum(state['P2'])
         state['delta_hist'].append(resp.step)
-
         print(f"Delta: {resp.step}")
-        ###################
-        # Step 1
-        sinr_state = []
-        for i in range(M):
-            sinr = (state['P2'][i] * state['direct_secondary_channels'][i]) / (1.0 + sum(state['P1']) * state['cross_primary_channels'][i])
-            sinr_db = 10 * math.log10(sinr) if sinr > 0 else -999
-            r = 0
-            for threshold, rate in MCS:
-                if sinr_db >= threshold:
-                    r = rate
-            sinr_state.append((sinr_db, r))
-        # Step 2
-        # next_sinr_target = []
-        # for sinr, rate in sinr_state:
-        #     for i in range(len(MCS)):
-        #         if rate == MCS[i][1]:
-        #             sinr_lin = 10**(MCS[i+1][0]/10.0) if i+1 < len(MCS) else 10 ** (MCS[i][0]/10.0)
-        #             next_sinr_target.append(sinr_lin)
 
-        next_sinr_target = []
-        for sinr_db, rate in sinr_state:
-            target_th_db = None
-            
-            for th, r in MCS:
-                if r > rate:
-                    target_th_db = th
-                    break
-    
-            if target_th_db is None:
-                target_th_db = MCS[-1][0] 
-                
-            sinr_lin = 10 ** (target_th_db / 10.0)
-            next_sinr_target.append(sinr_lin)
+        # 1. Calculate the new proposed TOTAL budget
+        new_total_budget = total_p2 + resp.step
+        
+        # 2. Prevent the budget from dropping below zero
+        new_total_budget = max(0, new_total_budget) 
 
-        # Step 3
-        p2_required = []
-        for i in range(M):
-            interference = sum(state['P1']) * state['cross_secondary_channels'][i]
-            required_p2 = (next_sinr_target[i] * (1.0 + interference)) / state['direct_secondary_channels'][i]
-            p2_required.append(required_p2)
-        # Step 4
-        cost = []
-        for i in range(M):
-            cost.append(p2_required[i] - state['P2'][i])
-        # Step 5
-        rank = []
-        for i in range(M):
-            current_rate = sinr_state[i][1]
-            
-            # Find the next rate (Value)
-            next_rate = current_rate
-            for th, r in MCS:
-                if r > current_rate:
-                    next_rate = r
-                    break
-                    
-            value = next_rate - current_rate
-            
-            # Efficiency = Mbps gained per Watt spent. 
-            # (Prevent division by zero if cost is somehow 0 or negative)
-            efficiency = (value / cost[i]) if cost[i] > 0 else 0 
-            
-            # Store as a tuple: (efficiency, receiver_index, cost, current_rate)
-            rank.append((efficiency, i, cost[i], current_rate))
-            
-        # Sort receivers by highest efficiency first
-        rank.sort(key=lambda x: x[0], reverse=True)
+        # 3. Use the exact same Global Knapsack function as the dataset!
+        state['P2'] = allocate_p2_knapsack_optimal(
+            new_total_budget, 
+            state['direct_secondary_channels'], 
+            state['cross_secondary_channels'], 
+            state['P1']
+        )
         
-        ###################
-        # Step 6: Distribute the Budget (Knapsack)
-        # Step 5: Calculate Log-Utility Efficiency and Rank
-        rank = []
-        for i in range(M):
-            current_rate = sinr_state[i][1]
-            
-            next_rate = current_rate
-            for th, r in MCS:
-                if r > current_rate:
-                    next_rate = r
-                    break
-                    
-            # Logarithmic Utility Gain for Proportional Fairness
-            log_curr = math.log(1.0 + current_rate)
-            log_next = math.log(1.0 + next_rate)
-            value = log_next - log_curr
-            
-            efficiency = (value / cost[i]) if cost[i] > 0 else 0 
-            rank.append((efficiency, i, cost[i], current_rate))
-            
-        rank.sort(key=lambda x: x[0], reverse=True)
-        
-        ###################
-        # Step 6: Distribute the Budget (Log-Proportional Knapsack)
-        budget = resp.step
-        new_P2 = list(state['P2']) 
-        
-        if budget > 0:
-            # INCREASE logic: Buy highest log-utility efficiency upgrades first
-            for eff, i, cst, curr_rate in rank:
-                required_watts = int(math.ceil(cst))
-                if budget >= required_watts and required_watts > 0:
-                    new_P2[i] += required_watts
-                    budget -= required_watts
-                    
-            if budget > 0:
-                top_index = rank[0][1]
-                new_P2[top_index] += budget
-                
-        elif budget < 0:
-            # DECREASE logic (Donor Concept): Cut excess power first
-            budget_to_cut = abs(budget)
-            rank.sort(key=lambda x: x[0]) 
-            
-            for eff, i, cst, curr_rate in rank:
-                if budget_to_cut <= 0:
-                    break
-                
-                min_sinr_db = -999
-                for th, r in MCS:
-                    if r == curr_rate:
-                        min_sinr_db = th
-                        break
-                        
-                if min_sinr_db != -999:
-                    min_sinr_lin = 10 ** (min_sinr_db / 10.0)
-                    interference = sum(state['P1']) * state['cross_secondary_channels'][i]
-                    min_p2 = (min_sinr_lin * (1.0 + interference)) / state['direct_secondary_channels'][i]
-                    
-                    excess = new_P2[i] - min_p2 
-                    if excess > 0:
-                        cut = min(budget_to_cut, int(math.floor(excess)))
-                        new_P2[i] -= cut
-                        budget_to_cut -= cut
-            
-            if budget_to_cut > 0:
-                for i in range(M):
-                    if new_P2[i] > 0:
-                        cut = min(budget_to_cut, new_P2[i])
-                        new_P2[i] -= cut
-                        budget_to_cut -= cut
-
-        state['P2'] = new_P2
-        print(f"New power after Log-Fairness Knapsack distribution: {state['P2']}")
+        print(f"New power after Global Knapsack distribution: {state['P2']}")
 
     return state
 
