@@ -22,8 +22,8 @@ from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
 
-N = 2  
-M = 2
+N = 5  
+M = 3
 
 data = []
 
