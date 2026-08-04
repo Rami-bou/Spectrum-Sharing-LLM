@@ -527,7 +527,7 @@ app = workflow.compile()
 
 data = gen_channels(120)
 train = data[:90]
-test = data[95:96]
+test = data[90:100]
 prompt_secondary_allocation = build_prompt(train)
 all_pred_P2 = []
 all_true_P2 = []
