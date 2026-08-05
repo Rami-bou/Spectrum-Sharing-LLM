@@ -1,5 +1,6 @@
 """
-Need to fix the negotiation and start negotiate on the secondary MCS.
+This one we critique on the caused intreference on the primary receivers.
+We need to draw the interference
 """
 
 import matplotlib.pyplot as plt
@@ -26,19 +27,10 @@ from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
 
-N = 3
+# number of primary receivers
+N = 4
+# number of secondary receivers
 M = 3
-
-data = []
-
-f = 2e9
-c = 3e8
-wave = c / f
-scale_factor = 1e8
-
-secondary_I_max = 3000
-primary_I_max = 1000
-random.seed(11)
 
 MCS = [
     (2.0, 15),
@@ -50,79 +42,23 @@ MCS = [
     (20.0, 150)
 ]
 
-def get_mcs_threshold(sinr_db):
-    """Finds the minimum required SINR (dB) for the current state."""
-    target_th = -999
-    for th, rate in MCS:
-        if sinr_db >= th:
-            target_th = th
-        else:
-            break
-    return target_th
+repeated = set()
+data = []
 
-def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
-    """
-    Distributes allowed_p2 among secondary receivers to maximize aggregate 
-    discrete throughput using greedy Knapsack selection.
-    """
-    M = len(direct_h_secondary)
-    P2_dist = [0] * M
-    budget = allowed_p2
+f = 2e9
+c = 3e8
+wave = c / f
+P_max = 100.0
 
-    # Pre-calculate interference caused by Primary onto each Secondary receiver
-    total_p1_interf = [sum(P1_dist) * cross_h_secondary[i] for i in range(M)]
+I_max = 1000
+P1 = 100
+scale_factor = 1e8
+possible_P2 = []
 
-    # Greedy allocation loop
-    while budget > 0:
-        best_eff = -1.0
-        best_user = -1
-        best_cost = 0
+primary_I_max = 1000
+secondary_I_max = 1500
 
-        for i in range(M):
-            # Calculate current SINR in dB
-            sinr_lin = (P2_dist[i] * direct_h_secondary[i]) / (1.0 + total_p1_interf[i])
-            sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
-
-            # Find current rate and next MCS threshold
-            curr_rate = 0
-            next_th = None
-            next_rate = 0
-
-            for th, rate in MCS:
-                if sinr_db >= th:
-                    curr_rate = rate
-                elif next_th is None:
-                    next_th = th
-                    next_rate = rate
-                    break
-
-            # If an upgrade tier exists, evaluate cost and efficiency
-            if next_th is not None:
-                target_sinr_lin = 10 ** (next_th / 10.0)
-                required_p2 = (target_sinr_lin * (1.0 + total_p1_interf[i])) / direct_h_secondary[i]
-                cost = int(math.ceil(required_p2 - P2_dist[i]))
-
-                if 0 < cost <= budget:
-                    value = next_rate - curr_rate
-                    eff = value / float(cost)
-
-                    if eff > best_eff:
-                        best_eff = eff
-                        best_user = i
-                        best_cost = cost
-
-        # If a valid upgrade user was found, purchase the upgrade
-        if best_user != -1:
-            P2_dist[best_user] += best_cost
-            budget -= best_cost
-        else:
-            # If remaining budget cannot push ANY user to a higher MCS level,
-            # dump the leftover budget into the receiver with the strongest direct channel.
-            best_user = max(range(M), key=lambda k: direct_h_secondary[k])
-            P2_dist[best_user] += budget
-            budget = 0
-
-    return P2_dist
+random.seed(10)
 
 def get_discrete_rate(sinr_linear):
     """Converts linear SINR to dB and maps it to a discrete data rate."""
@@ -250,6 +186,7 @@ def gen_channels(length):
 
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 
+"""We start with the beamfor version, where each receivers i share the sub-channel"""
 class GraphState(TypedDict):
     direct_primary_channels: List[int]
     direct_secondary_channels: List[int]
@@ -274,55 +211,29 @@ class PrimaryOutput(BaseModel):
     severity: Literal["HIGH", "MEDIUM", "LOW"] = Field(description="Magnitude of correction needed, independent of direction.")
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
 
-def primary(state: GraphState) -> GraphState:
-    """
-    The primary transmitter evaluates the secondary's proposed power allocation (P2) and provides feedback based on 
-    the worst-case MCS margin across all primary receivers.
-    """
+def primary(state:GraphState) -> GraphState:
+
     total_p2 = sum(state['P2'])
-    margins = []
+
+    interference_on_primary = [total_p2 * state['cross_primary_channels'][i] for i in range(len(state['cross_primary_channels']))]
+    primary_gaps = [inter - primary_I_max for inter in interference_on_primary]
+    max_gap = max(primary_gaps)
+    print(f"Gap: {primary_gaps}")
+
+    prompt_primary = f"""You are the Central Network Evaluator. Your absolute priority is protecting Primary users.
+    You will receive the caused interference on your channel by the secondary user's power allocation.
+    The Gap is defined as: Gap = caused_interference - {primary_I_max}. A positive Gap means the secondary is causing too much interference. A negative Gap means the secondary is well under the threshold and wasting power budget.
     
-    # 1. Calculate the MCS margin for every primary receiver
-    for j in range(len(state['P1'])):
-        signal = state['P1'][j] * state['direct_primary_channels'][j]
-        if signal <= 0:
-            continue
-            
-        # Baseline SINR in dB (when P2 = 0)
-        baseline_sinr_db = 10 * math.log10(signal)
-        
-        # Target MCS cliff threshold for this receiver
-        target_th = get_mcs_threshold(baseline_sinr_db)
-        if target_th < 0:
-            continue
-            
-        # Actual SINR in dB with current P2 proposal
-        interference = total_p2 * state['cross_primary_channels'][j]
-        actual_sinr_linear = signal / (1.0 + interference)
-        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-        
-        # Margin: How far above/below the cliff edge are we?
-        margin = actual_sinr_db - target_th
-        margins.append(margin)
+    Follow these exact bands based on the Gap:
+    1. Gap > 1000: EMERGENCY, way too much interference. decision=REJECT, action=DECREASE, severity=HIGH.
+    2. 500 <= Gap <= 999: too much interference. decision=REJECT, action=DECREASE, severity=MEDIUM.
+    3. 100 < Gap <= 499: normal interference. decision=REJECT, action=DECREASE, severity=LOW.
+    5. 0 < Gap <= 100: Slightly above threshold, but acceptable. decision=ACCEPT.
+    4. Gap <= -500: far under the threshold, wasting a lot of power budget. decision=REJECT, action=INCREASE, severity=HIGH.
+    6. -499 <= Gap <= 0: Below threshold, acceptable, but can utilize more power. decision=ACCEPT.
+    7. You take the history of caused interference and you check and adapt the critique based on the valeus in there (whether they reduced near to threshold, or it increased compare with previous one).
 
-    # 2. Network safety depends on the weakest receiver
-    worst_margin = min(margins) if margins else -999.0
-    print(f"\n[Primary Evaluator] Worst MCS Margin: {worst_margin:.2f} dB")
-
-    prompt_primary = f"""You are the Central Network Evaluator protecting Primary users' discrete data rates.
-    You evaluate the 'Worst MCS Margin' (measured in dB). 
-    - A positive Margin means secondary interference is safely absorbed within the MCS step (no data loss).
-    - A negative Margin means secondary interference pushed a primary user off their MCS cliff, causing rate loss.
-    
-    Follow these exact decision bands:
-    1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
-    2. -3.0 dB <= Margin < -0.5 dB: action=DECREASE, severity=MEDIUM.
-    3. -0.5 dB <= Margin < 0.0 dB: decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 dB <= Margin <= 0.5 dB: decision=ACCEPT.
-    5. 0.5 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
-    6. Margin > 5.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
-
-    Your critique must explicitly mention the numeric step range for the matched band so the secondary user knows how to adjust.
+    Your critique must explicitly restate the numeric step range for the matched band, so the secondary user knows exactly what range to work within.
 
     Return JSON matching the schema.
     """
@@ -331,16 +242,17 @@ def primary(state: GraphState) -> GraphState:
     resp = structured_critic.invoke([
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
-        P2 Allocations proposed: {state['P2']}
-        Worst Primary MCS Margin: {worst_margin:.2f} dB
+        P2 Allocations: {state['P2']}
+        Worst-Case Primary Gap: {max_gap}
         """
+        # Primary Gaps (Interference - {primary_I_max}): {primary_gaps}
+
         )
     ])
 
     state['primary_critique'] = resp.critique
     state['primary_decision'] = resp.decision
     state['iteration'] += 1
-    
     print(f"[Decision]: {resp.decision} ({resp.severity})")
     print(f"[Critique]: {resp.critique}")
 
@@ -355,9 +267,7 @@ class SecondaryRemainRounds(BaseModel):
     step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
 
 def secondary(state:GraphState) -> GraphState:
-    """The Secondary Network Optimizer, operating alongside a Primary Network, 
-    aims to maximize the Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate.
-    """
+    """The primary transmitter, have more prevelige."""
     if not state['primary_critique']:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
@@ -374,32 +284,18 @@ def secondary(state:GraphState) -> GraphState:
         state['P2'] = resp.allocation_secondary
 
     else:
-        prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
-        Your goal is to find the maximum possible Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate. 
+        prompt = f"""You are a secondary user in a wireless communication environment.
+        Based on the received critique, you adjust your P2 proposal.
+        You add or substract depends on the action received from primary user.
+        You decide the step based on the P2 history and the corresponding caused interference, and you related them with the severity, so you can know whether we are far or near to the best P2.
+        The sing of the step (+ or -) depends on the action received as well.
         
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB. 
-        Based on the Primary's critique, you must output an integer `step` to adjust your total P2 power budget.
-        
-        Use this exact mapping to determine your step size based on the Primary's Margin and Severity:
-        
-        [DECREASE ACTIONS - Negative Step Values]
-        - Severity HIGH (Margin < -3.0 dB): EMERGENCY. You completely jammed the Primary user. 
-          Action: Output a large negative step (e.g., -20,-21,-22,-23,....,-30).
-        - Severity MEDIUM (-3.0 to -0.5 dB): Noticeable rate drop. 
-          Action: Output a moderate negative step (e.g., -8, -9, -10,...-15).
-        - Severity LOW (-0.5 to 0.0 dB): Just barely pushed over the cliff edge. 
-          Action: Output a tiny negative step (e.g., -1,-2,-3,-4,-5).
-          
-        [INCREASE ACTIONS - Positive Step Values]
-        - Severity LOW (3.0 to 5.0 dB): The primary is safe, and you have a small amount of excess room. 
-          Action: Output a small positive step (e.g., +5 to +10).
-        - Severity HIGH (Margin > 5.0 dB): The primary has a massive excess margin. You are leaving free throughput on the table. 
-          Action: Output a large positive step (e.g., +20,+21,+22,+23,+24,+25,....,+30).
+        Severity-to-step-size guide (same bands the primary user uses):
+        - HIGH: step magnitude roughly 20 to 30
+        - MEDIUM: step magnitude roughly 10 to 20
+        - LOW: step magnitude roughly 1 to 10
 
-        CRITICAL RULES:
-        1. Always output a NEGATIVE integer if the action is DECREASE.
-        2. Always output a POSITIVE integer if the action is INCREASE.
-        3. Review your `delta_hist` to avoid repeating the exact same failed step size. If you are bouncing back and forth over the cliff, cut your step size in half.
+        Do not repeat the exact same step as your last one if the situation (gap/severity) has changed - check your own step history below.
 
         Return JSON matching the schema.
         """
@@ -430,6 +326,39 @@ def secondary(state:GraphState) -> GraphState:
 
     return state
 
+def get_discrete_rate(sinr_linear):
+    """Converts linear SINR to dB and maps it to a discrete data rate."""
+    if sinr_linear <= 0:
+        return 0
+    
+    sinr_db = 10 * math.log10(sinr_linear)
+    
+    achieved_rate = 0
+    for threshold, rate in MCS:
+        if sinr_db >= threshold:
+            achieved_rate = rate
+        else:
+            break
+            
+    return achieved_rate
+
+def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+    """Calculates total Primary Throughput based on discrete MCS levels."""
+    total_throughput_mbps = 0
+    total_P2 = sum(P2_vector)
+    
+    for j in range(len(P1_vector)):
+        signal = P1_vector[j] * direct_h_primary[j]
+        interference_from_secondary = total_P2 * cross_h_primary[j]
+        
+        # Calculate physical linear SINR
+        sinr_linear = signal / (1.0 + interference_from_secondary)
+        
+        # Map to discrete hardware throughput
+        total_throughput_mbps += get_discrete_rate(sinr_linear)
+        
+    return total_throughput_mbps
+
 def build_prompt(train):
     prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
     Your job is to allocate a transmission power for each one of your receivers.
@@ -446,14 +375,14 @@ def build_prompt(train):
     return prompt_primary
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
-    print("Finalizer...\n")
-    if state["iteration"] > 3:
-        return "finalize"
-    # earsly stop
-    if state['primary_decision'] == "ACCEPT":
-        return "finalize"
+  print("Finalizer...\n")
+  if state["iteration"] > 3:
+    return "finalize"
 
+  if state['primary_decision'] == "REJECT":
     return "revise"
+
+  return "finalize"
 
 workflow = StateGraph(GraphState)
 
