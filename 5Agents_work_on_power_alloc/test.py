@@ -51,7 +51,7 @@ scale_factor = 1e8
 possible_P2 = []
 
 primary_I_max = 1000
-secondary_I_max = 1500
+secondary_I_max = 3000
 
 random.seed(10)
 
