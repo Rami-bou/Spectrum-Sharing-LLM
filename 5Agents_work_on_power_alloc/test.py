@@ -35,6 +35,10 @@ scale_factor = 1e8
 secondary_I_max = 3000
 primary_I_max = 1000
 random.seed(11)
+<<<<<<< HEAD
+=======
+
+>>>>>>> 0b81e17 (fuck)
 MCS = [
     (2.0, 15),
     (5.0, 30),
@@ -512,31 +516,24 @@ for j in range(len(mae_per_receiver)):
     print(f"Secondary Receiver {j+1} MAE: {mae_per_receiver[j]:.2f} Watts")
 print("="*40 + "\n")
 
-# --- REPLACEMENT PLOTTING SECTION ---
 window_size = 5 if len(test) < 50 else 10
 
 def moving_average(data, w):
     """Calculates the moving average shifting by 1 step at a time."""
     return np.convolve(data, np.ones(w), 'valid') / w
 
-# Sum the total Watts assigned to the Secondary Network for each test sample
-p2_pred_sum = [sum(p) for p in all_pred_P2]
-p2_true_sum = [sum(p) for p in all_true_P2]
-
-smoothed_p2_pred = moving_average(p2_pred_sum, window_size)
-smoothed_p2_true = moving_average(p2_true_sum, window_size)
+smoothed_se_pred = moving_average(se_pred_list, window_size)
+smoothed_se_true = moving_average(se_true_list, window_size)
 
 plt.figure(figsize=(12, 6))
-# Plot True Optimal first (thicker blue line)
-plt.plot(smoothed_p2_true, label='True Optimal Secondary Power (Watts)', color='blue', linestyle='--', marker='o', markersize=6, linewidth=2)
-# Plot Agent on top (slightly thinner red line so you can see both)
-plt.plot(smoothed_p2_pred, label='Agent-Allocated Secondary Power (Watts)', color='red', linestyle='-', marker='s', markersize=4, linewidth=1.5, alpha=0.8)
+plt.plot(smoothed_se_true, label=f'True Optimal Primary SE', color='blue', linestyle='--', marker='o', markersize=4)
+plt.plot(smoothed_se_pred, label=f'Agent-Protected Primary SE', color='red', linestyle='-', marker='s', markersize=4)
 
-plt.title(f'Secondary Network Power Allocation Comparison\n(Moving Average, Window={window_size})', fontsize=14)
+plt.title(f'Primary Network Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
 plt.xlabel('Test Sample Index (Rolling Window)', fontsize=12)
-plt.ylabel('Total Secondary Power P2 (Watts)', fontsize=12)
+plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_P2_Power.png")
+plt.savefig("Result_MCS.png")
 plt.show()
