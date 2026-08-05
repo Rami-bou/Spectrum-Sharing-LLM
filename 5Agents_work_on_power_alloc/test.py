@@ -124,15 +124,15 @@ def gen_channels(length):
     Generates a dataset of channel states and corresponding optimal power allocations for secondary and primary receivers.
     """
     while len(data) < length:
-        primary_transmitter = [8, 30]
-        secondary_transmitter = [5, 13]
+        primary_transmitter = [50, 50]
+        secondary_transmitter = [30, 30]
 
         # 1. Primary Channels
         dist__state = random.randint(1, 3)
         position_primary_receiver = []
         direct_h_primary = []
         for i in range(N):
-          rp = [random.uniform(15, 30), random.uniform(16, 30)]
+          rp = [random.uniform(10, 90), random.uniform(10, 90)]
 
           position_primary_receiver.append(rp)
           d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
@@ -144,7 +144,7 @@ def gen_channels(length):
         position_secondary_receiver = []
         direct_h_secondary = []
         for i in range(M):
-          rs = [random.uniform(10, 15), random.uniform(0, 15)]
+          rs = [random.uniform(10, 50), random.uniform(10, 50)]
 
           position_secondary_receiver.append(rs)
           d = np.sqrt((rs[0]-secondary_transmitter[0])**2 + (rs[1]-secondary_transmitter[1])**2)
