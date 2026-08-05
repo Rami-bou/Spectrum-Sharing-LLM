@@ -120,6 +120,22 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
 
     return P2_dist
 
+def get_discrete_rate(sinr_linear):
+    """Converts linear SINR to dB and maps it to a discrete data rate."""
+    if sinr_linear <= 0:
+        return 0
+    
+    sinr_db = 10 * math.log10(sinr_linear)
+    
+    achieved_rate = 0
+    for threshold, rate in MCS:
+        if sinr_db >= threshold:
+            achieved_rate = rate
+        else:
+            break
+            
+    return achieved_rate
+
 def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Calculates total Primary Throughput based on discrete MCS levels."""
     total_throughput_mbps = 0
@@ -439,22 +455,6 @@ all_pred_P2 = []
 all_true_P2 = []
 se_pred_list = []
 se_true_list = []
-
-def get_discrete_rate(sinr_linear):
-    """Converts linear SINR to dB and maps it to a discrete data rate."""
-    if sinr_linear <= 0:
-        return 0
-    
-    sinr_db = 10 * math.log10(sinr_linear)
-    
-    achieved_rate = 0
-    for threshold, rate in MCS:
-        if sinr_db >= threshold:
-            achieved_rate = rate
-        else:
-            break
-            
-    return achieved_rate
 
 print("\nStarting Benchmark over Test Dataset...")
 for i in range(len(test)):
