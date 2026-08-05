@@ -221,14 +221,24 @@ def gen_channels(length):
         if not p2_limits:
             continue
 
-        allowed_p2 = int(math.floor(min(p2_limits)))
+        # allowed_p2 = int(math.floor(min(p2_limits)))
+        # if allowed_p2 < M:
+        #     continue
+
+        # inverses = [1.0 / v for v in direct_h_secondary]
+        # sum_inverses = sum(inverses)
+        # P2_dist = [int(round((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        
+        allowed_p2 = int(math.floor(min(p2_limits) * 0.99))
+
         if allowed_p2 < M:
             continue
 
         inverses = [1.0 / v for v in direct_h_secondary]
         sum_inverses = sum(inverses)
-        P2_dist = [int(round((inv / sum_inverses) * allowed_p2)) for inv in inverses]
-        
+
+        # Allocate using floor instead of round to guarantee sum <= allowed_p2
+        P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
