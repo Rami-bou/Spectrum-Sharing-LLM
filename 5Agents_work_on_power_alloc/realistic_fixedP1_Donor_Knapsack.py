@@ -120,6 +120,9 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
     return P2_dist
 
 def gen_channels(length):
+    """
+    Generates a dataset of channel states and corresponding optimal power allocations for secondary and primary receivers.
+    """
     while len(data) < length:
         primary_transmitter = [8, 35]
         secondary_transmitter = [5, -20]
@@ -217,7 +220,6 @@ def gen_channels(length):
 
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 
-"""We start with the beamfor version, where each receivers i share the sub-channel"""
 class GraphState(TypedDict):
     direct_primary_channels: List[int]
     direct_secondary_channels: List[int]
@@ -243,6 +245,10 @@ class PrimaryOutput(BaseModel):
     critique: str = Field(description="Explicit instructions detailing what to do with the target array.")
 
 def primary(state: GraphState) -> GraphState:
+    """
+    The primary transmitter evaluates the secondary's proposed power allocation (P2) and provides feedback based on 
+    the worst-case MCS margin across all primary receivers.
+    """
     total_p2 = sum(state['P2'])
     margins = []
     
@@ -273,7 +279,6 @@ def primary(state: GraphState) -> GraphState:
     worst_margin = min(margins) if margins else -999.0
     print(f"\n[Primary Evaluator] Worst MCS Margin: {worst_margin:.2f} dB")
 
-    # 3. LLM Prompt based on MCS Margin Bands
     prompt_primary = f"""You are the Central Network Evaluator protecting Primary users' discrete data rates.
     You evaluate the 'Worst MCS Margin' (measured in dB). 
     - A positive Margin means secondary interference is safely absorbed within the MCS step (no data loss).
@@ -320,7 +325,9 @@ class SecondaryRemainRounds(BaseModel):
     step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
 
 def secondary(state:GraphState) -> GraphState:
-    """The primary transmitter, have more prevelige."""
+    """The Secondary Network Optimizer, operating alongside a Primary Network, 
+    aims to maximize the Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate.
+    """
     if not state['primary_critique']:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([

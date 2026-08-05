@@ -20,7 +20,10 @@ class SecondaryRemainRounds(BaseModel):
     step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
 
 def secondary(state:GraphState) -> GraphState:
-    """The primary transmitter, have more prevelige."""
+    """
+    The Secondary Network Optimizer, operating alongside a Primary Network, 
+    aims to maximize the Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate.
+    """
     if not state['primary_critique']:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
