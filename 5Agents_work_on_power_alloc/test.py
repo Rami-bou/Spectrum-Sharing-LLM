@@ -159,66 +159,77 @@ def gen_channels(length):
         secondary_transmitter = [30, 30]
 
         # 1. Primary Channels
-        dist__state = random.randint(1, 3)
         position_primary_receiver = []
         direct_h_primary = []
         for i in range(N):
-          rp = [random.uniform(10, 90), random.uniform(10, 90)]
-
-          position_primary_receiver.append(rp)
-          d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
-          h = (wave / (4 * np.pi * d))**2
-          direct_h_primary.append(int(round(h * scale_factor, 2)))
+            rp = [random.uniform(10, 90), random.uniform(10, 90)]
+            position_primary_receiver.append(rp)
+            d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
+            h = (wave / (4 * np.pi * d))**2
+            direct_h_primary.append(int(round(h * scale_factor, 2)))
 
         # 2. Secondary Channels
-        dist__state = random.randint(1, 3)
         position_secondary_receiver = []
         direct_h_secondary = []
         for i in range(M):
             rs = [random.uniform(10, 50), random.uniform(10, 50)]
-
             position_secondary_receiver.append(rs)
             d = np.sqrt((rs[0]-secondary_transmitter[0])**2 + (rs[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
+            direct_h_secondary.append(int(round(h * scale_factor, 2)))
 
-            direct_h_secondary.append(h_normal)
-
+        # 3. Cross Channels
         cross_h_primary = []
         for pos in position_primary_receiver:
             d = np.sqrt((pos[0]-secondary_transmitter[0])**2 + (pos[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
-            cross_h_primary.append(h_normal)
+            cross_h_primary.append(int(round(h * scale_factor, 2)))
 
         cross_h_secondary = []
         for pos in position_secondary_receiver:
             d = np.sqrt((pos[0]-primary_transmitter[0])**2 + (pos[1]-primary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
-            h_normal = int(round(h * scale_factor, 2))
-            # going from primary transmitter to secondary users
-            cross_h_secondary.append(h_normal)
+            cross_h_secondary.append(int(round(h * scale_factor, 2)))
 
-        allowed_p1 = int(round(primary_I_max / max(cross_h_secondary)))
-        allowed_p2 = int(round(secondary_I_max / max(cross_h_primary)))
-        if allowed_p1 < N or allowed_p2 < M:
+        # 4. P1 Power Distribution
+        allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
+        if allowed_p1 < N:
             continue
-        
-        # distribute the P1 accross the users where the nearest get less power and vise versa
+
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
         P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
 
-        inverses = [1.0 / v for v in direct_h_secondary]
-        sum_inverses = sum(inverses)
-        P2_dist = [int(round((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        # 5. Calculate Max Allowed P2 based on Primary MCS Cliffs
+        p2_limits = []
+        for j in range(N):
+            signal = P1_dist[j] * direct_h_primary[j]
+            if signal <= 0:
+                continue
+            
+            baseline_sinr_db = 10 * math.log10(signal)
+            target_th = get_mcs_threshold(baseline_sinr_db)
+            if target_th < 0:
+                continue
+            
+            min_linear_sinr = 10 ** (target_th / 10.0)
+            max_interference = (signal / min_linear_sinr) - 1.0
+            
+            if max_interference > 0 and cross_h_primary[j] > 0:
+                p2_limits.append(max_interference / cross_h_primary[j])
 
-        p2_rate = calculate_primary_discrete_rate(P1_dist, P2_dist, direct_h_primary, cross_h_primary)
-        print(f"P2 original Rate: {p2_rate}")
+        if not p2_limits:
+            continue
+
+        allowed_p2 = int(math.floor(min(p2_limits)))
+        if allowed_p2 < M:
+            continue
+
+        # 6. Global Knapsack Optimal Allocation for Dataset
+        P2_dist = allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
         
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
-    
     return data
 
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
@@ -394,10 +405,14 @@ def secondary(state:GraphState) -> GraphState:
 
         print(f"Delta: {resp.step}")
 
-        P2_new = int(max(1, total_p2 + resp.step))
-        inverses = [1.0 / v for v in state['direct_secondary_channels']]
-        sum_inverses = sum(inverses)
-        state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
+        # Calculate new total budget and distribute using Knapsack
+        P2_new = int(max(0, total_p2 + resp.step))
+        state['P2'] = allocate_p2_knapsack_optimal(
+            P2_new,
+            state['direct_secondary_channels'],
+            state['cross_secondary_channels'],
+            state['P1']
+        )
 
         print(f"New power after delta: {state['P2']}")
 
