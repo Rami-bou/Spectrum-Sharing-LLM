@@ -432,7 +432,7 @@ def build_prompt(train):
 
 def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
-    if state["iteration"] > 1:
+    if state["iteration"] > 3:
         return "finalize"
     # earsly stop
     if state['primary_decision'] == "ACCEPT":
