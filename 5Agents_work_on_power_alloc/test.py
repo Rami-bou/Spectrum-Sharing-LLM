@@ -543,4 +543,18 @@ plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
 plt.savefig("Result_MCS.png")
+
+pred_p2_sum = [sum(p) for p in all_pred_P2]
+true_p2_sum = [sum(p) for p in all_true_P2]
+
+plt.figure(figsize=(12, 6))
+plt.plot(moving_average(true_p2_sum, window_size), label='True Optimal Secondary Power (P2)', color='blue', linestyle='--')
+plt.plot(moving_average(pred_p2_sum, window_size), label='Agent Allocated Secondary Power (P2)', color='red', linestyle='-')
+plt.title('Secondary Network Transmit Power Budget (P2) Comparison')
+plt.xlabel('Test Sample Index')
+plt.ylabel('Total Allocated P2 Power (Watts)')
+plt.legend()
+plt.grid(True, linestyle=':', alpha=0.7)
+plt.savefig("Result_P2_Power.png")
+
 plt.show()
