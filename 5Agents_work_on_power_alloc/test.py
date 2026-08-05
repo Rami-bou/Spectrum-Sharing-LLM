@@ -35,10 +35,7 @@ scale_factor = 1e8
 secondary_I_max = 3000
 primary_I_max = 1000
 random.seed(11)
-<<<<<<< HEAD
-=======
 
->>>>>>> 0b81e17 (fuck)
 MCS = [
     (2.0, 15),
     (5.0, 30),
