@@ -149,7 +149,7 @@ def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cros
         sinr_linear = signal / (1.0 + interference_from_secondary)
         
         # Map to discrete hardware throughput
-        total_throughput_mbps += get_discrete_rate(sinr_linear)
+        total_throughput_mbps += math.log(get_discrete_rate(sinr_linear))
         
     return total_throughput_mbps
 
