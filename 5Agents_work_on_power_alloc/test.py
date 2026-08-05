@@ -136,14 +136,14 @@ def get_discrete_rate(sinr_linear):
             
     return achieved_rate
 
-def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, cross_h_secondary):
     """Calculates total Primary Throughput based on discrete MCS levels."""
     total_throughput_mbps = 0
-    total_P2 = sum(P2_vector)
+    total_P1 = sum(P1_vector)
     
     for j in range(len(P1_vector)):
-        signal = P1_vector[j] * direct_h_primary[j]
-        interference_from_secondary = total_P2 * cross_h_primary[j]
+        signal = P2_vector[j] * direct_h_secondary[j]
+        interference_from_secondary = total_P1 * cross_h_secondary[j]
         
         # Calculate physical linear SINR
         sinr_linear = signal / (1.0 + interference_from_secondary)
@@ -481,8 +481,8 @@ se_true_list = []
 
 print("\nStarting Benchmark over Test Dataset...")
 for i in range(len(test)):
-    direct_h_pri = test[i][0] 
-    cross_h_pri = test[i][2]  
+    direct_h_sec = test[i][1] 
+    cross_h_sec = test[i][3]  
     true_p1 = test[i][4]      
     true_p2 = test[i][5] 
     
@@ -506,8 +506,8 @@ for i in range(len(test)):
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    se_pred_list.append(calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_pri, cross_h_pri))
-    se_true_list.append(calculate_primary_discrete_rate(true_p1, true_p2, direct_h_pri, cross_h_pri))
+    se_pred_list.append(calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec))
+    se_true_list.append(calculate_primary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec))
 
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
