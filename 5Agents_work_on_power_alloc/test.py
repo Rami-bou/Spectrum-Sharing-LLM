@@ -201,25 +201,25 @@ def gen_channels(length):
         P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
 
         # 5. Calculate Max Allowed P2 based on Primary MCS Cliffs
-        # p2_limits = []
-        # for j in range(N):
-        #     signal = P1_dist[j] * direct_h_primary[j]
-        #     if signal <= 0:
-        #         continue
+        p2_limits = []
+        for j in range(N):
+            signal = P1_dist[j] * direct_h_primary[j]
+            if signal <= 0:
+                continue
             
-        #     baseline_sinr_db = 10 * math.log10(signal)
-        #     target_th = get_mcs_threshold(baseline_sinr_db)
-        #     if target_th < 0:
-        #         continue
+            baseline_sinr_db = 10 * math.log10(signal)
+            target_th = get_mcs_threshold(baseline_sinr_db)
+            if target_th < 0:
+                continue
             
-        #     min_linear_sinr = 10 ** (target_th / 10.0)
-        #     max_interference = (signal / min_linear_sinr) - 1.0
+            min_linear_sinr = 10 ** (target_th / 10.0)
+            max_interference = (signal / min_linear_sinr) - 1.0
             
-        #     if max_interference > 0 and cross_h_primary[j] > 0:
-        #         p2_limits.append(max_interference / cross_h_primary[j])
+            if max_interference > 0 and cross_h_primary[j] > 0:
+                p2_limits.append(max_interference / cross_h_primary[j])
 
-        # if not p2_limits:
-        #     continue
+        if not p2_limits:
+            continue
 
         # allowed_p2 = int(math.floor(min(p2_limits)))
         # if allowed_p2 < M:
