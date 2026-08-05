@@ -149,7 +149,7 @@ def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cros
         sinr_linear = signal / (1.0 + interference_from_secondary)
         
         # Map to discrete hardware throughput
-        total_throughput_mbps += math.log(get_discrete_rate(sinr_linear))
+        total_throughput_mbps += get_discrete_rate(sinr_linear)
         
     return total_throughput_mbps
 
@@ -199,8 +199,8 @@ def gen_channels(length):
             # going from primary transmitter to secondary users
             cross_h_secondary.append(h_normal)
 
-        allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
-        allowed_p2 = int(round(primary_I_max / max(cross_h_primary)))
+        allowed_p1 = int(round(primary_I_max / max(cross_h_secondary)))
+        allowed_p2 = int(round(secondary_I_max / max(cross_h_primary)))
         if allowed_p1 < N or allowed_p2 < M:
             continue
         
