@@ -60,6 +60,16 @@ secondary_I_max = 1500
 
 random.seed(10)
 
+def get_mcs_threshold(sinr_db):
+    """Finds the minimum required SINR (dB) for the current state."""
+    target_th = -999
+    for th, rate in MCS:
+        if sinr_db >= th:
+            target_th = th
+        else:
+            break
+    return target_th
+
 def get_discrete_rate(sinr_linear):
     """Converts linear SINR to dB and maps it to a discrete data rate."""
     if sinr_linear <= 0:
