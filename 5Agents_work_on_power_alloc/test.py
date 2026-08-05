@@ -301,11 +301,11 @@ def primary(state: GraphState) -> GraphState:
     
     Follow these exact decision bands:
     1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
-    2. -3.0 dB <= Margin < -0.5 dB: Noticeable rate drop. decision=REJECT, action=DECREASE, severity=MEDIUM.
-    3. -0.5 dB <= Margin < 0.0 dB: Just barely pushed over the cliff edge. decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 dB <= Margin <= 2.0 dB: OPTIMAL COOPERATION! Right on the cliff edge with zero rate loss. decision=ACCEPT, severity=LOW.
-    5. 2.0 dB < Margin <= 4.0 dB: Below capacity, wasting secondary power budget. decision=REJECT, action=INCREASE, severity=LOW.
-    6. Margin > 4.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
+    2. -3.0 dB <= Margin < -0.5 dB: action=DECREASE, severity=MEDIUM.
+    3. -0.5 dB <= Margin < 0.0 dB: decision=REJECT, action=DECREASE, severity=LOW.
+    4. 0.0 dB <= Margin <= 2.0 dB: decision=ACCEPT.
+    5. 3.0 dB <= Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
+    6. Margin > 5.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
     Your critique must explicitly mention the numeric step range for the matched band so the secondary user knows how to adjust.
 
@@ -369,17 +369,17 @@ def secondary(state:GraphState) -> GraphState:
         
         [DECREASE ACTIONS - Negative Step Values]
         - Severity HIGH (Margin < -3.0 dB): EMERGENCY. You completely jammed the Primary user. 
-          Action: Output a large negative step (e.g., -20 to -40).
+          Action: Output a large negative step (e.g., -20,-21,-22,-23,....,-30).
         - Severity MEDIUM (-3.0 to -0.5 dB): Noticeable rate drop. 
-          Action: Output a moderate negative step (e.g., -10 to -15).
+          Action: Output a moderate negative step (e.g., -8, -9, -10,...-15).
         - Severity LOW (-0.5 to 0.0 dB): Just barely pushed over the cliff edge. 
-          Action: Output a tiny negative step (e.g., -1 to -5).
+          Action: Output a tiny negative step (e.g., -1,-2,-3,-4,-5).
           
         [INCREASE ACTIONS - Positive Step Values]
-        - Severity LOW (2.0 to 4.0 dB): The primary is safe, and you have a small amount of excess room. 
+        - Severity LOW (3.0 to 5.0 dB): The primary is safe, and you have a small amount of excess room. 
           Action: Output a small positive step (e.g., +5 to +10).
-        - Severity HIGH (Margin > 4.0 dB): The primary has a massive excess margin. You are leaving free throughput on the table. 
-          Action: Output a large positive step (e.g., +20 to +40).
+        - Severity HIGH (Margin > 5.0 dB): The primary has a massive excess margin. You are leaving free throughput on the table. 
+          Action: Output a large positive step (e.g., +20,+21,+22,+23,+24,+25,....,+30).
 
         CRITICAL RULES:
         1. Always output a NEGATIVE integer if the action is DECREASE.
