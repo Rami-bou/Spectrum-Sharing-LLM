@@ -42,23 +42,25 @@ MCS = [
     (20.0, 150)
 ]
 
-repeated = set()
 data = []
 
 f = 2e9
 c = 3e8
 wave = c / f
-P_max = 100.0
-
-I_max = 1000
-P1 = 100
 scale_factor = 1e8
-possible_P2 = []
 
+secondary_I_max = 3000
 primary_I_max = 1000
-secondary_I_max = 1500
 
-random.seed(10)
+
+primary_transmitter = [80, 80]
+secondary_transmitter = [20, 20]
+
+MCS = [
+    (2.0, 15), (5.0, 30), (9.0, 45), (11.0, 60),
+    (15.0, 90), (18.0, 120), (20.0, 150)
+]
+random.seed(11)
 
 def get_mcs_threshold(sinr_db):
     """Finds the minimum required SINR (dB) for the current state."""
@@ -187,7 +189,7 @@ def gen_channels(length):
         sum_inverses = sum(inverses)
         # floor (not round) guarantees sum(P2_dist) <= allowed_p2
         P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
-        
+
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
