@@ -470,7 +470,7 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
     if state["iteration"] > 3:
         return "finalize"
-    # earsly stop
+    # early stop
     if state['primary_decision'] == "ACCEPT":
         return "finalize"
 
@@ -494,24 +494,23 @@ workflow.add_conditional_edges(
 )
 
 app = workflow.compile()
-# --------------------------------------------------------------------------
-# 100-SAMPLE BENCHMARK WITH 5-STEP BIN AVERAGE PLOTTING
-# --------------------------------------------------------------------------
 
-# Generate dataset: 90 training samples + 100 test samples = 190 total
 data = gen_channels(190)
 train = data[:90]
-test = data[90:190]  # Exactly 100 test samples
+test = data[90:190]
 
 prompt_secondary_allocation = build_prompt(train)
 
-# Lists to collect per-sample results across all 100 test topological realizations
 se_pred_list = []
 se_true_list = []
+
 interf_pred_list = []
 interf_true_list = []
 
-print("\nStarting Benchmark over 100 Test Samples...")
+success_list = []
+violation_list = []
+
+print(f"\nStarting Benchmark over {len(test)} Test Samples...")
 
 for i in range(len(test)):
     direct_h_sec = test[i][1] 
@@ -533,7 +532,6 @@ for i in range(len(test)):
         "iteration": 0
     }
 
-    # Execute agent decision graph
     result = app.invoke(initial_state)
     pred_p2 = result['P2']
     
@@ -548,30 +546,32 @@ for i in range(len(test)):
     max_interf_true = sum(true_p2) * max(cross_h_prim)
     interf_pred_list.append(max_interf_pred)
     interf_true_list.append(max_interf_true)
+    # 3. Calculate the sucess rate
+    success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
+    # 4. Constraint violation
+    violation_list.append(1 if max_interf_pred > primary_I_max else 0)
 
     print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
 
-# --------------------------------------------------------------------------
-# AGGREGATE DATA INTO 5-SAMPLE BIN AVERAGES (20 BINS TOTAL)
-# --------------------------------------------------------------------------
-bin_size = 5
-num_bins = len(test) // bin_size  # 20 bins
+print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
+print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
+print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
+print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
+print(f"Efficiency: {np.mean(success_list):.0%}")
+print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
-# X-axis indices representing test sample checkpoints: 5, 10, 15, ..., 100
+bin_size = 5
+num_bins = len(test) // bin_size 
+
 bin_x = [i * bin_size for i in range(1, num_bins + 1)]
 
-# Compute average for each 5-sample bin
 binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
 binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
 
 binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
 binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
 
-# --------------------------------------------------------------------------
-# PLOTTING
-# --------------------------------------------------------------------------
 
-# --- PLOT 1: Secondary Rate (5-Step Bin Averages) ---
 plt.figure(figsize=(10, 5))
 plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
 plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
@@ -585,10 +585,8 @@ plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
 plt.savefig("Result_Secondary_Rate_5Step_Bins.png")
 
-# --- PLOT 2: Primary Interference (5-Step Bin Averages vs. Threshold) ---
 plt.figure(figsize=(10, 5))
 
-# Plot Primary Interference Limit (I_max = 1000)
 plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit ($I_{{max}}={primary_I_max}$)')
 
 plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
@@ -604,6 +602,7 @@ plt.tight_layout()
 plt.savefig("Result_Primary_Interference_5Step_Bins.png")
 
 plt.show()
+
 # data = gen_channels(100)
 # test_data = data[90:100]
 
