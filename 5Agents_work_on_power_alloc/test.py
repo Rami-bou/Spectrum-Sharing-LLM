@@ -529,8 +529,8 @@ for i in range(len(test)):
     all_pred_P2.append(pred_p2)
     all_true_P2.append(true_p2)
     
-    se_pred_list.append(calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec))
-    se_true_list.append(calculate_primary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec))
+    se_pred_list.append(calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec))
+    se_true_list.append(calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec))
 
     print(f"Allocation P2 pred: {result['P2']}")
     print(f"Allocation P2 true: {test[i][5]}")
