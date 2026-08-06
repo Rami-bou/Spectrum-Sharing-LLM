@@ -28,7 +28,7 @@ import math
 from dotenv import load_dotenv
 
 # number of primary receivers
-N = 4
+N = 3
 # number of secondary receivers
 M = 3
 
