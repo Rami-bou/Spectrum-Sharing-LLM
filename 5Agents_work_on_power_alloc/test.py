@@ -151,19 +151,32 @@ def get_discrete_rate(sinr_linear):
             
     return achieved_rate
 
-def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, cross_h_secondary):
+def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Calculates total Primary Throughput based on discrete MCS levels."""
     total_throughput_mbps = 0
-    total_P1 = sum(P1_vector)
+    total_P2 = sum(P2_vector) # Total P2 acts as interference to Primary
     
     for j in range(len(P1_vector)):
-        signal = P2_vector[j] * direct_h_secondary[j]
-        interference_from_secondary = total_P1 * cross_h_secondary[j]
+        signal = P1_vector[j] * direct_h_primary[j]
+        interference_from_secondary = total_P2 * cross_h_primary[j]
         
-        # Calculate physical linear SINR
+        # Calculate physical linear SINR (assuming Noise = 1.0)
         sinr_linear = signal / (1.0 + interference_from_secondary)
+        total_throughput_mbps += get_discrete_rate(sinr_linear)
         
-        # Map to discrete hardware throughput
+    return total_throughput_mbps
+
+def calculate_secondary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, cross_h_secondary):
+    """Calculates total Secondary Throughput based on discrete MCS levels."""
+    total_throughput_mbps = 0
+    total_P1 = sum(P1_vector) # Total P1 acts as interference to Secondary
+    
+    for j in range(len(P2_vector)):
+        signal = P2_vector[j] * direct_h_secondary[j]
+        interference_from_primary = total_P1 * cross_h_secondary[j]
+        
+        # Calculate physical linear SINR (assuming Noise = 1.0)
+        sinr_linear = signal / (1.0 + interference_from_primary)
         total_throughput_mbps += get_discrete_rate(sinr_linear)
         
     return total_throughput_mbps
@@ -331,7 +344,7 @@ def primary(state: GraphState) -> GraphState:
     5. 0.5 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
     6. Margin > 5.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
-    Your critique must explicitly mention the numeric step range for the matched band so the secondary user knows how to adjust.
+    Your critique must explicitly mention the amount of the worst margin.
 
     Return JSON matching the schema.
     """
@@ -385,30 +398,37 @@ def secondary(state:GraphState) -> GraphState:
     else:
         prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
         Your goal is to find the maximum possible Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate. 
-        
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB. 
-        Based on the Primary's critique, you must output an integer `step` to adjust your total P2 power budget.
-        
-        Use this exact mapping to determine your step size based on the Primary's Margin and Severity:
-        
+
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB) and will provide it in its critique. 
+        The sweet spot (safe zone) is a margin exactly between 0.0 dB and 1.0 dB. 
+        Based on the Primary's critique and the exact Worst Margin provided, you must output an integer `step` to adjust your total P2 power budget.
+
+        Act as a Proportional Controller. Use the following profiles to scale your step size dynamically:
+
         [DECREASE ACTIONS - Negative Step Values]
-        - Severity HIGH (Margin < -3.0 dB): EMERGENCY. You completely jammed the Primary user. 
-          Action: Output a large negative step (e.g., -20,-21,-22,-23,....,-30).
-        - Severity MEDIUM (-3.0 to -0.5 dB): Noticeable rate drop. 
-          Action: Output a moderate negative step (e.g., -8, -9, -10,...-15).
-        - Severity LOW (-0.5 to 0.0 dB): Just barely pushed over the cliff edge. 
-          Action: Output a tiny negative step (e.g., -1,-2,-3,-4,-5).
-          
+        - Margin < -10.0 dB (EXTREME EMERGENCY): You are completely drowning the Primary signal. 
+        Action: Output a massive negative step (e.g., -40 to -60).
+        - Margin between -10.0 dB and -3.0 dB (HIGH Severity): Severe rate loss.
+        Action: Output a large negative step (e.g., -20 to -39). 
+        Methodology: Scale proportionally. If margin is -9 dB, choose ~-38; if margin is -4 dB, choose ~-22.
+        - Margin between -3.0 dB and -0.2 dB (MEDIUM Severity): Noticeable rate drop. 
+        Action: Output a moderate negative step (e.g., -6 to -19).
+        - Margin between -0.2 dB and 0.0 dB (LOW Severity): Just barely over the cliff edge. 
+        Action: Output a tiny negative step (e.g., -1 to -5).
+
         [INCREASE ACTIONS - Positive Step Values]
-        - Severity LOW (3.0 to 5.0 dB): The primary is safe, and you have a small amount of excess room. 
-          Action: Output a small positive step (e.g., +5 to +10).
-        - Severity HIGH (Margin > 5.0 dB): The primary has a massive excess margin. You are leaving free throughput on the table. 
-          Action: Output a large positive step (e.g., +20,+21,+22,+23,+24,+25,....,+30).
+        - Margin between 1.0 dB and 4.0 dB (LOW Severity): The primary is safe, with a small amount of excess capacity. 
+        Action: Output a small positive step (e.g., +2 to +10).
+        - Margin between 4.0 dB and 10.0 dB (MEDIUM Severity): Moderate excess capacity.
+        Action: Output a moderate positive step (e.g., +11 to +25).
+        - Margin > 10.0 dB (HIGH Severity): Massive excess capacity. You are leaving throughput on the table.
+        Action: Output a large positive step (e.g., +26 to +50). 
+        Methodology: Scale proportionally. If margin is +11 dB, choose ~+26; if margin is +20 dB or more, choose ~+50.
 
         CRITICAL RULES:
-        1. Always output a NEGATIVE integer if the action is DECREASE.
-        2. Always output a POSITIVE integer if the action is INCREASE.
-        3. Review your `delta_hist` to avoid repeating the exact same failed step size. If you are bouncing back and forth over the cliff, cut your step size in half.
+        1. POLARITY: Always output a NEGATIVE integer if the action is DECREASE. Always output a POSITIVE integer if the action is INCREASE.
+        2. PROPORTIONALITY: Read the exact Worst Margin from the critique and map it to the higher or lower end of the suggested step ranges.
+        3. OSCILLATION PREVENTION: Review your `delta_hist`. If your previous step caused the margin to flip polarity (e.g., from positive to negative), you have jumped over the optimal cliff. You MUST reverse direction and cut your new step size in half to land safely on the edge.
 
         Return JSON matching the schema.
         """
