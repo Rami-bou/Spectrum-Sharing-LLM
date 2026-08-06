@@ -612,7 +612,7 @@ plt.plot(sorted_opt, p_opt, label='Optimal Allocation', color='blue', linewidth=
 plt.plot(sorted_llm, p_llm, label='LLM Agent Allocation', color='red', linestyle='--', linewidth=2)
 plt.title('CDF of Secondary Sum Rate (Mbps)', fontsize=13)
 plt.xlabel('Secondary Sum Rate (Mbps)', fontsize=11)
-plt.ylabel('Cumulative Probability $P(X \\le x)$', fontsize=11)
+plt.ylabel('Cumulative Probability', fontsize=11)
 plt.legend(fontsize=11, loc='lower right')
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
