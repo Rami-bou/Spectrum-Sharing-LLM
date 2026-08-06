@@ -26,19 +26,10 @@ from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
 
+# number of primary receivers
 N = 3
+# number of secondary receivers
 M = 3
-
-data = []
-
-f = 2e9
-c = 3e8
-wave = c / f
-scale_factor = 1e8
-
-secondary_I_max = 3000
-primary_I_max = 1000
-random.seed(11)
 
 MCS = [
     (2.0, 15),
@@ -49,6 +40,26 @@ MCS = [
     (18.0, 120),
     (20.0, 150)
 ]
+
+data = []
+
+f = 2e9
+c = 3e8
+wave = c / f
+scale_factor = 1e8
+
+secondary_I_max = 3000
+primary_I_max = 1000
+
+
+primary_transmitter = [80, 80]
+secondary_transmitter = [20, 20]
+
+MCS = [
+    (2.0, 15), (5.0, 30), (9.0, 45), (11.0, 60),
+    (15.0, 90), (18.0, 120), (20.0, 150)
+]
+random.seed(11)
 
 def get_mcs_threshold(sinr_db):
     """Finds the minimum required SINR (dB) for the current state."""
