@@ -177,7 +177,7 @@ def calculate_secondary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, 
         
         # Calculate physical linear SINR (assuming Noise = 1.0)
         sinr_linear = signal / (1.0 + interference_from_primary)
-        total_throughput_mbps += get_discrete_rate(sinr_linear)
+        total_throughput_mbps += math.log(get_discrete_rate(sinr_linear))
         
     return total_throughput_mbps
 
