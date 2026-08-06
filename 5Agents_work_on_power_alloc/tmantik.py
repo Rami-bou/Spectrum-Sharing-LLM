@@ -266,7 +266,7 @@ def gen_channels(length):
         # floor (not round) guarantees sum(P2_dist) <= allowed_p2
         # P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
         P2_dist =allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
-        
+
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
@@ -495,143 +495,120 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
-data = gen_channels(120)
-train = data[:90]
-test = data[90:100]
-prompt_secondary_allocation = build_prompt(train)
-all_pred_P2 = []
-all_true_P2 = []
-se_pred_list = []
-se_true_list = []
-worst_margin_list = []  # Added: Track Primary MCS margin for paper plot
+data = gen_channels(100)
+test_data = data[90:100]
 
-print("\nStarting Benchmark over Test Dataset...")
-for i in range(len(test)):
-    direct_h_sec = test[i][1] 
-    cross_h_sec = test[i][3]  
-    true_p1 = test[i][4]      
-    true_p2 = test[i][5] 
+# 2. Define the prompt sizes to sweep
+train_sizes = [10, 30, 50, 70, 90]
+
+# Dictionaries/Lists to store results for our plots
+avg_rate_pred_list = []
+avg_rate_true_list = []
+interference_pred_dict = {size: [] for size in train_sizes}
+interference_true_dict = {size: [] for size in train_sizes}
+
+print("\nStarting Few-Shot Training Size Sweep...")
+
+for size in train_sizes:
+    print(f"\n{'='*40}")
+    print(f" EVALUATING WITH {size} TRAINING SAMPLES ")
+    print(f"{'='*40}")
     
-    initial_state = {
-        "direct_primary_channels": test[i][0],
-        "direct_secondary_channels": test[i][1],
-        "cross_primary_channels": test[i][2],
-        "cross_secondary_channels": test[i][3],
-        "P1": test[i][4],                      
-        "P2": [0] * M,
-        "primary_critique": "",
-        "primary_decision": "",
-        "delta_hist": [],
-        "iteration": 0
-    }
-
-    result = app.invoke(initial_state)
+    train_data = data[:size]
     
-    pred_p2 = result['P2']
+    # Update the global prompt variable used inside the `secondary` node
+    global prompt_secondary_allocation
+    prompt_secondary_allocation = build_prompt(train_data)
     
-    all_pred_P2.append(pred_p2)
-    all_true_P2.append(true_p2)
+    current_size_se_pred = []
+    current_size_se_true = []
     
-    se_pred_list.append(calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec))
-    se_true_list.append(calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec))
+    for i in range(len(test_data)):
+        direct_h_sec = test_data[i][1] 
+        cross_h_sec = test_data[i][3]  
+        true_p1 = test_data[i][4]      
+        true_p2 = test_data[i][5]
+        cross_h_prim = test_data[i][2]
+        
+        initial_state = {
+            "direct_primary_channels": test_data[i][0],
+            "direct_secondary_channels": test_data[i][1],
+            "cross_primary_channels": test_data[i][2],
+            "cross_secondary_channels": test_data[i][3],
+            "P1": test_data[i][4],                      
+            "P2": [0] * M,
+            "primary_critique": "",
+            "primary_decision": "",
+            "delta_hist": [],
+            "iteration": 0
+        }
 
-    # Added: Calculate final worst MCS margin for paper evaluation
-    margins = []
-    total_pred_p2 = sum(pred_p2)
-    for j in range(len(true_p1)):
-        signal = true_p1[j] * test[i][0][j]
-        if signal <= 0: continue
-        baseline_db = 10 * math.log10(signal)
-        target_th = get_mcs_threshold(baseline_db)
-        if target_th < 0: continue
-        interference = total_pred_p2 * test[i][2][j]
-        actual_lin = signal / (1.0 + interference)
-        actual_db = 10 * math.log10(actual_lin) if actual_lin > 0 else -999.0
-        margins.append(actual_db - target_th)
-    worst_margin_list.append(min(margins) if margins else -999.0)
+        # Run the LangGraph workflow
+        result = app.invoke(initial_state)
+        pred_p2 = result['P2']
+        
+        # --- METRIC 1: Calculate Secondary Rates ---
+        se_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
+        se_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
+        current_size_se_pred.append(se_pred)
+        current_size_se_true.append(se_true)
+        
+        # --- METRIC 2: Calculate Max Interference on Primary ---
+        # Interference caused to a primary receiver = total_P2 * cross_h_primary
+        max_interf_pred = sum(pred_p2) * max(cross_h_prim)
+        max_interf_true = sum(true_p2) * max(cross_h_prim)
+        
+        interference_pred_dict[size].append(max_interf_pred)
+        interference_true_dict[size].append(max_interf_true)
+        
+        print(f"Sample {i+1}: True P2 Sum = {sum(true_p2)}, Pred P2 Sum = {sum(pred_p2)}")
 
-    print(f"Allocation P2 pred: {result['P2']}")
-    print(f"Allocation P2 true: {test[i][5]}")
+    # Store the average rates for this training size
+    avg_rate_pred_list.append(np.mean(current_size_se_pred))
+    avg_rate_true_list.append(np.mean(current_size_se_true))
 
-all_pred_P2 = np.array(all_pred_P2) 
-all_true_P2 = np.array(all_true_P2) 
+# PLOT 1: Secondary Rate vs Training Size (Line Chart)
+plt.figure(figsize=(8, 6))
+plt.plot(train_sizes, avg_rate_true_list, label='True Optimal (Baseline)', color='blue', linestyle='--', marker='o')
+plt.plot(train_sizes, avg_rate_pred_list, label='LLM Agent Prediction', color='red', linestyle='-', marker='s')
 
-mae_per_receiver = np.mean(np.abs(all_pred_P2 - all_true_P2), axis=0)
-
-print("\n" + "="*40)
-print(" BENCHMARK RESULTS: MEAN ABSOLUTE ERROR ")
-print("="*40)
-for j in range(len(mae_per_receiver)):
-    print(f"Secondary Receiver {j+1} MAE: {mae_per_receiver[j]:.2f} Watts")
-print("="*40 + "\n")
-
-window_size = 5 if len(test) < 50 else 10
-
-def moving_average(data, w):
-    """Calculates the moving average shifting by 1 step at a time."""
-    return np.convolve(data, np.ones(w), 'valid') / w
-
-smoothed_se_pred = moving_average(se_pred_list, window_size)
-smoothed_se_true = moving_average(se_true_list, window_size)
-
-# Existing Plots
-plt.figure(figsize=(12, 6))
-plt.plot(smoothed_se_true, label=f'True Optimal Primary SE', color='blue', linestyle='--', marker='o', markersize=4)
-plt.plot(smoothed_se_pred, label=f'Agent-Protected Primary SE', color='red', linestyle='-', marker='s', markersize=4)
-plt.title(f'Primary Network Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
-plt.xlabel('Test Sample Index (Rolling Window)', fontsize=12)
-plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
+plt.title('Impact of Few-Shot Examples on Secondary Sum Rate', fontsize=14)
+plt.xlabel('Number of Training Samples in Prompt', fontsize=12)
+plt.ylabel('Average Secondary Sum Rate (Mbps)', fontsize=12)
+plt.xticks(train_sizes)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_MCS.png")
+plt.savefig("Result_Rate_vs_TrainSize.png")
 
-pred_p2_sum = [sum(p) for p in all_pred_P2]
-true_p2_sum = [sum(p) for p in all_true_P2]
 
-plt.figure(figsize=(12, 6))
-plt.plot(moving_average(true_p2_sum, window_size), label='True Optimal Secondary Power (P2)', color='blue', linestyle='--')
-plt.plot(moving_average(pred_p2_sum, window_size), label='Agent Allocated Secondary Power (P2)', color='red', linestyle='-')
-plt.title('Secondary Network Transmit Power Budget (P2) Comparison')
-plt.xlabel('Test Sample Index')
-plt.ylabel('Total Allocated P2 Power (Watts)')
-plt.legend()
-plt.grid(True, linestyle=':', alpha=0.7)
-plt.savefig("Result_P2_Power.png")
+# PLOT 2: Primary Interference vs Training Size (Grouped Scatter)
+plt.figure(figsize=(10, 6))
 
-# --------------------------------------------------------------------------
-# RESEARCH PAPER PLOTS (ADDED)
-# --------------------------------------------------------------------------
+# Plot the hard threshold
+plt.axhline(y=1000, color='black', linestyle='-', linewidth=2, label='Primary Interference Limit ($I_{max}=1000$)')
 
-# 1. Cumulative Distribution Function (CDF) Plot for Secondary Sum Rate
-sorted_opt = np.sort(se_true_list)
-sorted_llm = np.sort(se_pred_list)
-p_opt = np.arange(1, len(sorted_opt) + 1) / len(sorted_opt)
-p_llm = np.arange(1, len(sorted_llm) + 1) / len(sorted_llm)
+# We use a slight offset on the x-axis so True and Pred dots don't overlap completely
+offset = 1.5 
+for size in train_sizes:
+    x_true = [size - offset] * len(test_data)
+    x_pred = [size + offset] * len(test_data)
+    
+    # Plot individual scatters for each test sample
+    plt.scatter(x_true, interference_true_dict[size], color='blue', alpha=0.5, marker='o', s=40)
+    plt.scatter(x_pred, interference_pred_dict[size], color='red', alpha=0.6, marker='x', s=40)
 
-plt.figure(figsize=(8, 5))
-plt.plot(sorted_opt, p_opt, label='Optimal Allocation', color='blue', linewidth=2)
-plt.plot(sorted_llm, p_llm, label='LLM Agent Allocation', color='red', linestyle='--', linewidth=2)
-plt.title('CDF of Secondary Sum Rate (Mbps)', fontsize=13)
-plt.xlabel('Secondary Sum Rate (Mbps)', fontsize=11)
-plt.ylabel('Cumulative Probability', fontsize=11)
-plt.legend(fontsize=11, loc='lower right')
+# Add dummy scatter points just to populate the legend cleanly
+plt.scatter([], [], color='blue', alpha=0.5, marker='o', label='True Optimal Interference')
+plt.scatter([], [], color='red', alpha=0.6, marker='x', label='LLM Agent Interference')
+
+plt.title('Constraint Satisfaction: Primary Interference vs. Prompt Size', fontsize=14)
+plt.xlabel('Number of Training Samples in Prompt', fontsize=12)
+plt.ylabel('Max Caused Interference to Primary', fontsize=12)
+plt.xticks(train_sizes)
+plt.legend(fontsize=11, loc='upper right')
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_Secondary_Rate_CDF.png")
-
-# 2. Primary Network MCS Protection (Scatter Plot with Shaded Target Region)
-plt.figure(figsize=(9, 5))
-plt.axhline(y=0.0, color='red', linestyle='--', linewidth=1.5, label='MCS Cliff Threshold (0 dB)')
-plt.axhspan(0.0, 1.0, color='green', alpha=0.2, label='Target Safe Zone (0.0 to 1.0 dB)')
-x_idx = range(1, len(worst_margin_list) + 1)
-plt.scatter(x_idx, worst_margin_list, color='purple', marker='x', s=60, label='LLM Achieved Margin')
-plt.title('Constraint Protection: Primary Receiver Worst MCS Margin', fontsize=13)
-plt.xlabel('Test Sample Realization', fontsize=11)
-plt.ylabel('Worst MCS Margin (dB)', fontsize=11)
-plt.legend(fontsize=10, loc='upper right')
-plt.grid(True, linestyle=':', alpha=0.7)
-plt.tight_layout()
-plt.savefig("Result_Primary_Margin_Scatter.png")
+plt.savefig("Result_Interference_vs_TrainSize.png")
 
 plt.show()
