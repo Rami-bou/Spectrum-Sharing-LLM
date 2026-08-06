@@ -105,30 +105,35 @@ def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, cr
 
 def gen_channels(length):
     while len(data) < length:
-        primary_transmitter = [50, 50]
-        secondary_transmitter = [30, 30]
-
-        # 1. Primary Channels
+        # Primary receivers: bounded cell around their own TX (10-35m),
+        # kept away from the secondary transmitter's territory.
         position_primary_receiver = []
         direct_h_primary = []
         for i in range(N):
-            rp = [random.uniform(10, 90), random.uniform(10, 90)]
+            dist_r = random.uniform(10, 35)
+            angle = random.uniform(0, 2 * math.pi)
+            rp = [primary_transmitter[0] + dist_r * math.cos(angle),
+                  primary_transmitter[1] + dist_r * math.sin(angle)]
             position_primary_receiver.append(rp)
             d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
             direct_h_primary.append(int(round(h * scale_factor, 2)))
 
-        # 2. Secondary Channels
+        # Secondary receivers: tight cluster around their own TX (1-5m).
+        # Needed so secondary's own SINR can reach the same MCS table primary uses --
+        # a spread-out secondary is always interference-limited to below MCS tier 0.
         position_secondary_receiver = []
         direct_h_secondary = []
         for i in range(M):
-            rs = [random.uniform(10, 50), random.uniform(10, 50)]
+            dist_r = random.uniform(1, 5)
+            angle = random.uniform(0, 2 * math.pi)
+            rs = [secondary_transmitter[0] + dist_r * math.cos(angle),
+                  secondary_transmitter[1] + dist_r * math.sin(angle)]
             position_secondary_receiver.append(rs)
             d = np.sqrt((rs[0]-secondary_transmitter[0])**2 + (rs[1]-secondary_transmitter[1])**2)
             h = (wave / (4 * np.pi * d))**2
             direct_h_secondary.append(int(round(h * scale_factor, 2)))
 
-        # 3. Cross Channels
         cross_h_primary = []
         for pos in position_primary_receiver:
             d = np.sqrt((pos[0]-secondary_transmitter[0])**2 + (pos[1]-secondary_transmitter[1])**2)
@@ -141,7 +146,6 @@ def gen_channels(length):
             h = (wave / (4 * np.pi * d))**2
             cross_h_secondary.append(int(round(h * scale_factor, 2)))
 
-        # 4. P1 Power Distribution
         allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
         if allowed_p1 < N:
             continue
@@ -150,21 +154,25 @@ def gen_channels(length):
         sum_inverses = sum(inverses)
         P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
 
-        # 5. Calculate Max Allowed P2 based on Primary MCS Cliffs
+        # Reject the sample if ANY primary receiver fails to clear the lowest MCS
+        # tier at baseline (P2=0) -- this is what "best P1" actually means: don't
+        # silently skip weak receivers later, guarantee all of them qualify up front.
+        baseline_ok = True
+        for j in range(N):
+            signal = P1_dist[j] * direct_h_primary[j]
+            if signal <= 0 or get_mcs_threshold(10 * math.log10(signal)) < 0:
+                baseline_ok = False
+                break
+        if not baseline_ok:
+            continue
+
         p2_limits = []
         for j in range(N):
             signal = P1_dist[j] * direct_h_primary[j]
-            if signal <= 0:
-                continue
-            
             baseline_sinr_db = 10 * math.log10(signal)
-            target_th = get_mcs_threshold(baseline_sinr_db)
-            if target_th < 0:
-                continue
-            
+            target_th = get_mcs_threshold(baseline_sinr_db)  # guaranteed >= 0 now
             min_linear_sinr = 10 ** (target_th / 10.0)
             max_interference = (signal / min_linear_sinr) - 1.0
-            
             if max_interference > 0 and cross_h_primary[j] > 0:
                 p2_limits.append(max_interference / cross_h_primary[j])
 
@@ -172,24 +180,14 @@ def gen_channels(length):
             continue
 
         allowed_p2 = int(math.floor(min(p2_limits)))
-        # allowed_p2 = int(round(primary_I_max / max(cross_h_primary)))
         if allowed_p2 < M:
             continue
 
         inverses = [1.0 / v for v in direct_h_secondary]
         sum_inverses = sum(inverses)
-        P2_dist = [int(round((inv / sum_inverses) * allowed_p2)) for inv in inverses]
-        
-        # allowed_p2 = int(math.floor(min(p2_limits) * 0.99))
-
-        # if allowed_p2 < M:
-        #     continue
-
-        # inverses = [1.0 / v for v in direct_h_secondary]
-        # sum_inverses = sum(inverses)
-
-        # Allocate using floor instead of round to guarantee sum <= allowed_p2
+        # floor (not round) guarantees sum(P2_dist) <= allowed_p2
         P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
