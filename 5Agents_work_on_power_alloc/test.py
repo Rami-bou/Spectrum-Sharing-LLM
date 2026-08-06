@@ -177,7 +177,7 @@ def calculate_secondary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, 
         
         # Calculate physical linear SINR (assuming Noise = 1.0)
         sinr_linear = signal / (1.0 + interference_from_primary)
-        total_throughput_mbps += math.log(get_discrete_rate(sinr_linear))
+        total_throughput_mbps += get_discrete_rate(sinr_linear)
         
     return total_throughput_mbps
 
@@ -231,7 +231,6 @@ def gen_channels(length):
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
         P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
-
         # Reject the sample if ANY primary receiver fails to clear the lowest MCS
         # tier at baseline (P2=0) -- this is what "best P1" actually means: don't
         # silently skip weak receivers later, guarantee all of them qualify up front.
@@ -264,7 +263,8 @@ def gen_channels(length):
         inverses = [1.0 / v for v in direct_h_secondary]
         sum_inverses = sum(inverses)
         # floor (not round) guarantees sum(P2_dist) <= allowed_p2
-        P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        # P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        P2_dist =allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
 
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
@@ -443,7 +443,8 @@ def secondary(state:GraphState) -> GraphState:
         P2_new = int(max(1, total_p2 + resp.step))
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
-        state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
+        # state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
+        state['P2'] =allocate_p2_knapsack_optimal(P2_new, state['direct_secondary_channels'], state['cross_secondary_channels'], state['P1'])
 
         print(f"New power after delta: {state['P2']}")
 
