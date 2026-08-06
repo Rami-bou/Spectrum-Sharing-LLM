@@ -397,38 +397,28 @@ def secondary(state:GraphState) -> GraphState:
 
     else:
         prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
-        Your goal is to find the maximum possible Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate. 
-
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB) and will provide it in its critique. 
-        The sweet spot (safe zone) is a margin exactly between 0.0 dB and 1.0 dB. 
-        Based on the Primary's critique and the exact Worst Margin provided, you must output an integer `step` to adjust your total P2 power budget.
-
-        Act as a Proportional Controller. Use the following profiles to scale your step size dynamically:
-
-        [DECREASE ACTIONS - Negative Step Values]
-        - Margin < -10.0 dB (EXTREME EMERGENCY): You are completely drowning the Primary signal. 
-        Action: Output a massive negative step (e.g., -40 to -60).
-        - Margin between -10.0 dB and -3.0 dB (HIGH Severity): Severe rate loss.
-        Action: Output a large negative step (e.g., -20 to -39). 
-        Methodology: Scale proportionally. If margin is -9 dB, choose ~-38; if margin is -4 dB, choose ~-22.
-        - Margin between -3.0 dB and -0.2 dB (MEDIUM Severity): Noticeable rate drop. 
-        Action: Output a moderate negative step (e.g., -6 to -19).
-        - Margin between -0.2 dB and 0.0 dB (LOW Severity): Just barely over the cliff edge. 
-        Action: Output a tiny negative step (e.g., -1 to -5).
-
-        [INCREASE ACTIONS - Positive Step Values]
-        - Margin between 1.0 dB and 4.0 dB (LOW Severity): The primary is safe, with a small amount of excess capacity. 
-        Action: Output a small positive step (e.g., +2 to +10).
-        - Margin between 4.0 dB and 10.0 dB (MEDIUM Severity): Moderate excess capacity.
-        Action: Output a moderate positive step (e.g., +11 to +25).
-        - Margin > 10.0 dB (HIGH Severity): Massive excess capacity. You are leaving throughput on the table.
-        Action: Output a large positive step (e.g., +26 to +50). 
-        Methodology: Scale proportionally. If margin is +11 dB, choose ~+26; if margin is +20 dB or more, choose ~+50.
+        Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
+        
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 1.0 dB.
+        
+        You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
+        
+        [DECREASE ACTIONS - Margin < 0.0 dB]
+        Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
+        - Worst Case Anchor (Margin <= -10.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
+        - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
+        - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
+        
+        [INCREASE ACTIONS - Margin > 1.0 dB]
+        Allowed Steps: [+1, +2, +3, +5, +10, +15, +20, +25, +30]
+        - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +30.
+        - Least Case Anchor (Margin = +1.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
+        - In Between: Evaluate where the current margin falls between +1.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +15, +20). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
 
         CRITICAL RULES:
-        1. POLARITY: Always output a NEGATIVE integer if the action is DECREASE. Always output a POSITIVE integer if the action is INCREASE.
-        2. PROPORTIONALITY: Read the exact Worst Margin from the critique and map it to the higher or lower end of the suggested step ranges.
-        3. OSCILLATION PREVENTION: Review your `delta_hist`. If your previous step caused the margin to flip polarity (e.g., from positive to negative), you have jumped over the optimal cliff. You MUST reverse direction and cut your new step size in half to land safely on the edge.
+        1. You must ONLY select a step value from the Allowed Steps lists provided above.
+        2. Always output a NEGATIVE integer if the action is DECREASE. Always output a POSITIVE integer if the action is INCREASE.
+        3. Oscillation Check: Look at your `delta_hist`. If your last step caused the margin to flip polarity (e.g., from positive to negative), you jumped too far. You MUST reverse direction and pick a step from the list that is strictly smaller in magnitude than your previous step.
 
         Return JSON matching the schema.
         """
