@@ -117,10 +117,19 @@ def primary(state: GraphState) -> GraphState:
     state['primary_critique'] = resp.critique
     state['primary_decision'] = resp.decision
     state['iteration'] += 1
+
+    print(f"[Decision]: {resp.decision} ({resp.severity})")
+    print(f"[Critique]: {resp.critique}")
     
     print(f"[Decision]: {resp.decision} ({resp.severity})")
     print(f"[Critique]: {resp.critique}")
 
+    if state['iteration'] > 3 and worst_margin < 0:
+        state['P2'] = [0] * len(state['P2'])
+        print(f"[SAFETY FALLBACK] Final allocation violates the margin ({worst_margin:.2f} dB) -- forcing P2 to zero.")
+    elif state['iteration'] > 3:
+        print(f"[INFO] Round limit reached without ACCEPT, but margin ({worst_margin:.2f} dB) is still safe -- keeping current allocation.")
+        
     return state
 
 class SecondaryOutput(BaseModel):
