@@ -4,8 +4,7 @@ from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, START, END 
 from typing_extensions import TypedDict, Annotated
 
-from primary_agent import primary
-from secondary_agent import secondary
+from agents import primary, secondary
 
 llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 

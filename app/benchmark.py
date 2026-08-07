@@ -1,9 +1,8 @@
-from app.environment import gen_channels, MCS, M
 import math
 import numpy as np
 from graph import app
 import matplotlib.pyplot as plt
-from secondary_agent import test
+from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M
 
 data = gen_channels(190)
 train = data[:90]
