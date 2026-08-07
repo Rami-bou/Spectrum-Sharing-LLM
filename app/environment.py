@@ -237,3 +237,7 @@ def gen_channels(length):
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
     return data
+
+data = gen_channels(190)
+train = data[:90]
+test = data[90:190]

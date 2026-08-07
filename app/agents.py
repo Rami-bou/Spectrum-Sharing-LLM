@@ -3,11 +3,28 @@ from typing import List, Dict, Any, Optional, TypedDict, Literal, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain.messages import SystemMessage
 from pydantic import BaseModel, Field
+from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 import math
-from environment import get_mcs_threshold, MCS, M, N, allocate_p2_knapsack_optimal
-from graph import GraphState, llm
-from benchmark import train
+from environment import get_mcs_threshold, MCS, M, N, allocate_p2_knapsack_optimal, train
+
+class GraphState(TypedDict):
+    direct_primary_channels: List[int]
+    direct_secondary_channels: List[int]
+    cross_primary_channels: List[int]
+    cross_secondary_channels: List[int]
+
+    P1: List[int]
+    P2: List[int]
+
+    primary_critique: str
+    secondary_critique: str
+
+    primary_decision: str
+
+    delta_hist: List[int]
+
+    iteration: int
 
 def build_prompt(train):
     prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
@@ -25,6 +42,8 @@ def build_prompt(train):
     return prompt_primary
 
 prompt_secondary_allocation = build_prompt(train)
+
+llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.0)
 
 class PrimaryOutput(BaseModel):
     decision: Literal["ACCEPT", "REJECT"] = Field(description="The final decision based strictly on the rules.")

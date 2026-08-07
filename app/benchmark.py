@@ -1,12 +1,8 @@
 import math
 import numpy as np
-from graph import app
 import matplotlib.pyplot as plt
-from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M
-
-data = gen_channels(190)
-train = data[:90]
-test = data[90:190]
+from graph import app
+from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test
 
 se_pred_list = []
 se_true_list = []
