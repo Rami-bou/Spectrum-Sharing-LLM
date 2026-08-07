@@ -1,8 +1,41 @@
-import math
+import os
+import csv
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from graph import app
 from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
+os.makedirs(RESULT_DIR, exist_ok=True)
+
+def save_file(f):
+    with open(metrics_path, "w") as f:
+        f.write("=" * 60 + "\n")
+        f.write("BASELINE PERFORMANCE\n")
+        f.write("=" * 60 + "\n\n")
+
+        f.write(f"Average Secondary Rate      : {np.mean(se_pred_list):.2f} Mbps\n")
+        f.write(f"Average Optimal Rate        : {np.mean(se_true_list):.2f} Mbps\n")
+
+        efficiency = 100 * np.mean(se_pred_list) / np.mean(se_true_list)
+
+        f.write(f"Efficiency                 : {efficiency:.2f} %\n\n")
+
+        f.write(f"Average Interference        : {np.mean(interf_pred_list):.2f}\n")
+        f.write(f"Maximum Interference        : {np.max(interf_pred_list):.2f}\n")
+
+        violation_rate = 100 * np.mean(violation_list)
+
+        f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
+
+        f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
+
+        success_rate = 100 * np.mean(success_list)
+
+        f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
 se_pred_list = []
 se_true_list = []
@@ -12,6 +45,22 @@ interf_true_list = []
 
 success_list = []
 violation_list = []
+
+csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
+csv_file = open(csv_path, "w", newline="")
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow([
+    "Sample",
+    "TrueRate",
+    "PredRate",
+    "TrueInterference",
+    "PredInterference",
+    "Violation",
+    "Rounds",
+    "Decision",
+    "TrueP2",
+    "PredP2"
+])
 
 print(f"\nStarting Benchmark over {len(test)} Test Samples...")
 
@@ -54,8 +103,24 @@ for i in range(len(test)):
     # 4. Constraint violation
     violation_list.append(1 if max_interf_pred > primary_I_max else 0)
 
+    csv_writer.writerow([
+        i + 1,
+        rate_true,
+        rate_pred,
+        max_interf_true,
+        max_interf_pred,
+        violation_list[i],
+        result["iteration"],
+        result["primary_decision"],
+        sum(true_p2),
+        sum(pred_p2) # str(true_p2)
+    ])
+
     print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
 
+csv_file.close()
+metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
+save_file(metrics_path)
 print(f"System Benchmark Before attack:\n")
 print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
 print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
@@ -87,7 +152,7 @@ plt.xticks(bin_x)
 plt.legend(fontsize=11)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_Secondary_Rate_5Step_Bins.png")
+plt.savefig("./results/baseline/secondary_rate.png")
 
 plt.figure(figsize=(10, 5))
 
@@ -103,7 +168,7 @@ plt.xticks(bin_x)
 plt.legend(fontsize=11, loc='upper right')
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_Primary_Interference_5Step_Bins.png")
+plt.savefig("./results/baseline/primary_interference.png")
 
 plt.show()
 
