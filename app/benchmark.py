@@ -152,7 +152,14 @@ plt.xticks(bin_x)
 plt.legend(fontsize=11)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("./results/baseline/secondary_rate.png")
+plt.savefig(
+    os.path.join(
+        RESULT_DIR,
+        "secondary_rate.png"
+    ),
+    dpi=300,
+    bbox_inches="tight"
+)
 
 plt.figure(figsize=(10, 5))
 
@@ -168,7 +175,14 @@ plt.xticks(bin_x)
 plt.legend(fontsize=11, loc='upper right')
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("./results/baseline/primary_interference.png")
+plt.savefig(
+    os.path.join(
+        RESULT_DIR,
+        "primary_interference.png"
+    ),
+    dpi=300,
+    bbox_inches="tight"
+)
 
 plt.show()
 
