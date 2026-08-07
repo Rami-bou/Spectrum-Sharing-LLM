@@ -553,6 +553,7 @@ for i in range(len(test)):
 
     print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
 
+print(f"System Benchmark Before attack:\n")
 print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
 print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
 print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
