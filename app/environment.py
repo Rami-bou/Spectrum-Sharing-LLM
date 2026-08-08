@@ -238,6 +238,6 @@ def gen_channels(length):
 
     return data
 
-data = gen_channels(190)
-train = data[:90]
-test = data[90:]
+data = gen_channels(500)
+train = data[:100]
+test = data[100:]
