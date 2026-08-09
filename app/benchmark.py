@@ -11,7 +11,7 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-def save_file(f):
+def save_file(metrics_path):
     with open(metrics_path, "w") as f:
         f.write("=" * 60 + "\n")
         f.write("BASELINE PERFORMANCE\n")
@@ -31,7 +31,7 @@ def save_file(f):
 
         f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
 
-        # f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
+        f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
 
         success_rate = 100 * np.mean(success_list)
 
@@ -43,6 +43,7 @@ se_true_list = []
 interf_pred_list = []
 interf_true_list = []
 
+rounds_list = []
 success_list = []
 violation_list = []
 
@@ -50,16 +51,8 @@ csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
 csv_file = open(csv_path, "w", newline="")
 csv_writer = csv.writer(csv_file)
 csv_writer.writerow([
-    "Sample",
-    "TrueRate",
-    "PredRate",
-    "TrueInterference",
-    "PredInterference",
-    "Violation",
-    "Rounds",
-    "Decision",
-    "TrueP2",
-    "PredP2"
+    "Sample", "TrueRate", "PredRate", "TrueInterference", "PredInterference",
+    "Violation", "Rounds", "Decision", "WorstMargin", "TrueP2", "PredP2"
 ])
 
 print(f"\nStarting Benchmark over {len(test)} Test Samples...")
@@ -81,7 +74,8 @@ for i in range(len(test)):
         "primary_critique": "",
         "primary_decision": "",
         "delta_hist": [],
-        "iteration": 0
+        "iteration": 0,
+        "worst_margin": 0.0
     }
 
     result = app.invoke(initial_state)
@@ -102,18 +96,12 @@ for i in range(len(test)):
     success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
     # 4. Constraint violation
     violation_list.append(1 if max_interf_pred > primary_I_max else 0)
-
+    rounds_list.append(result["iteration"])
     csv_writer.writerow([
-        i + 1,
-        rate_true,
-        rate_pred,
-        max_interf_true,
-        max_interf_pred,
-        violation_list[i],
-        result["iteration"],
-        result["primary_decision"],
-        sum(true_p2),
-        sum(pred_p2) # str(true_p2)
+        i + 1, rate_true, rate_pred, max_interf_true, max_interf_pred,
+        violation_list[i], result["iteration"], result["primary_decision"],
+        f"{result['worst_margin']:.2f}", sum(true_p2) # str(true_p2)
+        , sum(pred_p2)
     ])
 
     print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
@@ -129,62 +117,59 @@ print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
 print(f"Efficiency: {np.mean(success_list):.0%}")
 print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
-# Only attempt to plot if there are enough test samples for binning
 if len(test) > 0:
-    bin_size = 5
-    # Recalculate num_bins to ensure it's at least 1 if there's data, or correctly reflects the number of bins
-    num_bins = (len(test) + bin_size - 1) // bin_size 
-    
-    # Recalculate bin_x based on the corrected num_bins
+    bin_size = 20 
+    num_bins = len(test) // bin_size
+
     bin_x = [i * bin_size for i in range(1, num_bins + 1)]
 
-    # The binned lists are already calculated correctly based on len(se_pred_list) and bin_size
     binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
     binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
 
     binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
     binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
 
+    x_tick_labels = np.arange(0, len(test) + 1, 50)
 
     plt.figure(figsize=(10, 5))
     plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
 
-    plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.title('Secondary Network Sum Rate (Averaged Every 20 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
-    plt.xticks(bin_x)
+
+    plt.xticks(x_tick_labels)  # Clean fixed ticks
+    plt.xlim(0, len(test) + 10)
+
     plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
     plt.savefig(
-        os.path.join(
-            RESULT_DIR,
-            "secondary_rate.png"
-        ),
+        os.path.join(RESULT_DIR, "secondary_rate.png"),
         dpi=300,
         bbox_inches="tight"
     )
 
     plt.figure(figsize=(10, 5))
 
-    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
+    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit ($I_{{max}}={primary_I_max}$)')
 
     plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
 
-    plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.title('Primary Network Protection: Caused Interference (Averaged Every 20 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Max Interference Injected', fontsize=11)
-    plt.xticks(bin_x)
+
+    plt.xticks(x_tick_labels) 
+    plt.xlim(0, len(test) + 10)
+
     plt.legend(fontsize=11, loc='upper right')
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
     plt.savefig(
-        os.path.join(
-            RESULT_DIR,
-            "primary_interference.png"
-        ),
+        os.path.join(RESULT_DIR, "primary_interference.png"),
         dpi=300,
         bbox_inches="tight"
     )

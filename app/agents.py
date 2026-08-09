@@ -1,3 +1,5 @@
+from django.db.migrations import state
+
 from langchain.messages import SystemMessage
 from typing import List, Dict, Any, Optional, TypedDict, Literal, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -25,6 +27,8 @@ class GraphState(TypedDict):
     delta_hist: List[int]
 
     iteration: int
+
+    worst_margin: float
 
 def build_prompt(train):
     prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
@@ -117,10 +121,8 @@ def primary(state: GraphState) -> GraphState:
     state['primary_critique'] = resp.critique
     state['primary_decision'] = resp.decision
     state['iteration'] += 1
+    state['worst_margin'] = worst_margin
 
-    print(f"[Decision]: {resp.decision} ({resp.severity})")
-    print(f"[Critique]: {resp.critique}")
-    
     print(f"[Decision]: {resp.decision} ({resp.severity})")
     print(f"[Critique]: {resp.critique}")
 
