@@ -612,14 +612,37 @@ def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cros
 
 print("\nStarting Benchmark over Test Dataset...")
 TEMPERATURES = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-index = 0
-llm = ChatOllama(model="qwen2.5-coder:14b", temperature=TEMPERATURES[index])
-for _ in range(len(TEMPERATURES)):
+
+# Metrics stored PER TEMPERATURE
+avg_sec_rate_pred = []
+avg_sec_rate_true = []
+avg_mae_list = []
+avg_interference_list = []
+
+print("\nStarting Temperature Sensitivity Benchmark...")
+
+for temp in TEMPERATURES:
+    print(f"\n" + "="*40)
+    print(f" EVALUATING TEMPERATURE = {temp} ")
+    print("="*40)
+    
+    # 1. Update the global LLM instance so nodes use the new temperature
+    global llm
+    llm = ChatOllama(model="qwen2.5-coder:14b", temperature=temp)
+    
+    # Per-temperature evaluation lists
+    run_pred_P2 = []
+    run_true_P2 = []
+    run_sec_rate_pred = []
+    run_sec_rate_true = []
+    run_interference = []
+    
     for i in range(len(test)):
-        direct_h_pri = test[i][0] 
-        cross_h_pri = test[i][2]  
+        direct_h_sec = test[i][1] 
+        cross_h_sec = test[i][3]  
         true_p1 = test[i][4]      
         true_p2 = test[i][5] 
+        cross_h_prim = test[i][2]
         
         initial_state = {
             "direct_primary_channels": test[i][0],
@@ -634,51 +657,72 @@ for _ in range(len(TEMPERATURES)):
             "iteration": 0
         }
 
+        # Invoke LangGraph app with current temperature model
         result = app.invoke(initial_state)
-        
         pred_p2 = result['P2']
         
-        all_pred_P2.append(pred_p2)
-        all_true_P2.append(true_p2)
+        run_pred_P2.append(pred_p2)
+        run_true_P2.append(true_p2)
         
-        se_pred_list.append(calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_pri, cross_h_pri))
-        se_true_list.append(calculate_primary_discrete_rate(true_p1, true_p2, direct_h_pri, cross_h_pri))
-
-        print(f"Allocation P2 pred: {result['P2']}")
-        print(f"Allocation P2 true: {test[i][5]}")
+        # Calculate rates and caused interference for this sample
+        rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
+        rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
+        run_sec_rate_pred.append(rate_pred)
+        run_sec_rate_true.append(rate_true)
         
-    index += 1
+        max_interf = sum(pred_p2) * max(cross_h_prim)
+        run_interference.append(max_interf)
 
-all_pred_P2 = np.array(all_pred_P2) 
-all_true_P2 = np.array(all_true_P2) 
+    # 2. Calculate average metrics for THIS temperature
+    run_pred_P2 = np.array(run_pred_P2)
+    run_true_P2 = np.array(run_true_P2)
+    mae = np.mean(np.abs(run_pred_P2 - run_true_P2))
+    
+    avg_mae_list.append(mae)
+    avg_sec_rate_pred.append(np.mean(run_sec_rate_pred))
+    avg_sec_rate_true.append(np.mean(run_sec_rate_true))  # Optimal baseline reference
+    avg_interference_list.append(np.mean(run_interference))
+    
+    print(f"Temp {temp:.1f} -> MAE: {mae:.2f} W | Avg Sec Rate: {np.mean(run_sec_rate_pred):.2f} Mbps | Avg Interf: {np.mean(run_interference):.2f}")
 
-mae_per_receiver = np.mean(np.abs(all_pred_P2 - all_true_P2), axis=0)
+# --------------------------------------------------------------------------
+# RESEARCH PLOTS: TEMPERATURE SENSITIVITY
+# --------------------------------------------------------------------------
 
-print("\n" + "="*40)
-print(" BENCHMARK RESULTS: MEAN ABSOLUTE ERROR ")
-print("="*40)
-for j in range(len(mae_per_receiver)):
-    print(f"Secondary Receiver {j+1} MAE: {mae_per_receiver[j]:.2f} Watts")
-print("="*40 + "\n")
+# PLOT 1: Dual-Axis Chart (Secondary Rate vs MAE across Temperatures)
+fig, ax1 = plt.subplots(figsize=(9, 5))
 
-window_size = 5 if len(test) < 50 else 10
+color = 'tab:red'
+ax1.set_xlabel('LLM Temperature Setting', fontsize=12)
+ax1.set_ylabel('Average Secondary Rate (Mbps)', color=color, fontsize=12)
+ax1.plot(TEMPERATURES, avg_sec_rate_pred, color=color, marker='s', linewidth=2, label='LLM Secondary Rate')
+ax1.plot(TEMPERATURES, avg_sec_rate_true, color='blue', linestyle='--', linewidth=1.5, label='Optimal Rate')
+ax1.tick_params(axis='y', labelcolor=color)
+ax1.grid(True, linestyle=':', alpha=0.6)
 
-def moving_average(data, w):
-    """Calculates the moving average shifting by 1 step at a time."""
-    return np.convolve(data, np.ones(w), 'valid') / w
+# Secondary Y-Axis for Power Allocation Error (MAE)
+ax2 = ax1.twinx()  
+color = 'tab:purple'
+ax2.set_ylabel('Power Allocation MAE (Watts)', color=color, fontsize=12)
+ax2.plot(TEMPERATURES, avg_mae_list, color=color, marker='o', linestyle='-.', linewidth=2, label='Power MAE')
+ax2.tick_params(axis='y', labelcolor=color)
 
-smoothed_se_pred = moving_average(se_pred_list, window_size)
-smoothed_se_true = moving_average(se_true_list, window_size)
+plt.title('LLM Performance & Allocation Accuracy vs. Temperature', fontsize=13)
+fig.tight_layout()
+plt.savefig("Result_Temperature_Sensitivity.png", dpi=300)
 
-plt.figure(figsize=(12, 6))
-plt.plot(smoothed_se_true, label=f'True Optimal Primary SE', color='blue', linestyle='--', marker='o', markersize=4)
-plt.plot(smoothed_se_pred, label=f'Agent-Protected Primary SE', color='red', linestyle='-', marker='s', markersize=4)
+# PLOT 2: Primary Interference Protection vs Temperature
+plt.figure(figsize=(9, 5))
+plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit ($I_{{max}}={primary_I_max}$)')
+plt.plot(TEMPERATURES, avg_interference_list, color='red', marker='x', linestyle='-', linewidth=2, markersize=8, label='LLM Injected Interference')
 
-plt.title(f'Primary Network Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
-plt.xlabel('Test Sample Index (Rolling Window)', fontsize=12)
-plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
-plt.legend(fontsize=12)
+plt.title('Constraint Protection vs. Temperature', fontsize=13)
+plt.xlabel('LLM Temperature Setting', fontsize=12)
+plt.ylabel('Average Max Interference Injected', fontsize=12)
+plt.xticks(TEMPERATURES)
+plt.legend(fontsize=11, loc='upper right')
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_MCS.png")
+plt.savefig("Result_Temperature_Interference.png", dpi=300)
+
 plt.show()
