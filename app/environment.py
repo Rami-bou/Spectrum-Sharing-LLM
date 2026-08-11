@@ -38,6 +38,65 @@ def get_mcs_threshold(sinr_db):
             break
     return target_th
 
+def allocate_p1_knapsack_optimal(budget, direct_h_primary):
+    """
+    Distributes allowed_p1 among primary receivers to maximize aggregate 
+    discrete throughput using greedy Knapsack selection.
+    """
+    N = len(direct_h_primary)
+    P1_dist = [0] * N
+    budget_left = budget
+
+    while budget_left > 0:
+        best_eff = -1.0
+        best_user = -1
+        best_cost = 0
+
+        for i in range(N):
+            # Calculate current SINR in dB (Noise = 1.0, P2=0 at this stage)
+            sinr_lin = (P1_dist[i] * direct_h_primary[i]) 
+            sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
+
+            # Find current rate and next MCS threshold
+            curr_rate = 0
+            next_th = None
+            next_rate = 0
+
+            for th, rate in MCS:
+                if sinr_db >= th:
+                    curr_rate = rate
+                elif next_th is None:
+                    next_th = th
+                    next_rate = rate
+                    break
+
+            # Evaluate upgrade cost and efficiency
+            if next_th is not None:
+                target_sinr_lin = 10 ** (next_th / 10.0)
+                required_p1 = target_sinr_lin / direct_h_primary[i]
+                cost = int(math.ceil(required_p1 - P1_dist[i]))
+
+                if 0 < cost <= budget_left:
+                    value = next_rate - curr_rate
+                    eff = value / float(cost)
+
+                    if eff > best_eff:
+                        best_eff = eff
+                        best_user = i
+                        best_cost = cost
+
+        # Apply the best upgrade
+        if best_user != -1:
+            P1_dist[best_user] += best_cost
+            budget_left -= best_cost
+        else:
+            # Dump leftover budget into the receiver with the strongest direct channel
+            best_user = max(range(N), key=lambda k: direct_h_primary[k])
+            P1_dist[best_user] += budget_left
+            budget_left = 0
+
+    return P1_dist
+
 def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
     """
     Distributes allowed_p2 among secondary receivers to maximize aggregate 
@@ -197,8 +256,8 @@ def gen_channels(length):
 
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
-        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
-
+        # P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
+        P1_dist = allocate_p1_knapsack_optimal(allowed_p1, direct_h_primary)
         # Reject the sample if ANY primary receiver fails to clear the lowest MCS
         # tier at baseline (P2=0) -- this is what "best P1" actually means: don't
         # silently skip weak receivers later, guarantee all of them qualify up front.
@@ -218,6 +277,7 @@ def gen_channels(length):
             target_th = get_mcs_threshold(baseline_sinr_db)  # guaranteed >= 0 now
             min_linear_sinr = 10 ** (target_th / 10.0)
             max_interference = (signal / min_linear_sinr) - 1.0
+            # we choose p2 that don't cause a rate drop for primary
             if max_interference > 0 and cross_h_primary[j] > 0:
                 p2_limits.append(max_interference / cross_h_primary[j])
 
