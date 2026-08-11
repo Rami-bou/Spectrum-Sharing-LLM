@@ -1,0 +1,13 @@
+============================================================
+BASELINE PERFORMANCE
+============================================================
+
+Average Secondary Rate      : 230.25 Mbps
+Average Optimal Rate        : 232.95 Mbps
+Efficiency                 : 98.84 %
+
+Average Interference        : 4431.81
+Maximum Interference        : 83364.00
+Violation Rate             : 13.00 %
+
+Negotiation Success Rate   : 48.00 %
