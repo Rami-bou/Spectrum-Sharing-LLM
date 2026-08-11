@@ -118,7 +118,7 @@ print(f"Efficiency: {np.mean(success_list):.0%}")
 print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
 if len(test) > 0:
-    bin_size = 20 
+    bin_size = 5 
     num_bins = len(test) // bin_size
 
     bin_x = [i * bin_size for i in range(1, num_bins + 1)]
@@ -129,13 +129,13 @@ if len(test) > 0:
     binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
     binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
 
-    x_tick_labels = np.arange(0, len(test) + 1, 50)
+    x_tick_labels = np.arange(0, len(test) + 1, 5)
 
     plt.figure(figsize=(10, 5))
     plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
 
-    plt.title('Secondary Network Sum Rate (Averaged Every 20 Test Samples)', fontsize=13)
+    plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
     plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
 
@@ -158,7 +158,7 @@ if len(test) > 0:
     plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
 
-    plt.title('Primary Network Protection: Caused Interference (Averaged Every 20 Test Samples)', fontsize=13)
+    plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
     plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Max Interference Injected', fontsize=11)
 
