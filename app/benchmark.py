@@ -139,7 +139,7 @@ if len(test) > 0:
     plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
 
-    plt.xticks(x_tick_labels)  # Clean fixed ticks
+    plt.xticks(x_tick_labels)
     plt.xlim(0, len(test) + 10)
 
     plt.legend(fontsize=11)
