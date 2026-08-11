@@ -538,6 +538,8 @@ interf_true_list = []
 
 success_list = []
 violation_list = []
+se_pred_list_primary = []
+se_true_list_primary = []
 
 csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
 csv_file = open(csv_path, "w", newline="")
@@ -560,6 +562,8 @@ print(f"\nStarting Benchmark over {len(test)} Test Samples...")
 for i in range(len(test)):
     direct_h_sec = test[i][1]
     cross_h_sec = test[i][3]
+    direct_h_prim = test[i][0]
+    cross_h_prim = test[i][2]
     true_p1 = test[i][4]
     true_p2 = test[i][5]
     cross_h_prim = test[i][2]
@@ -586,6 +590,11 @@ for i in range(len(test)):
     rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
     se_pred_list.append(rate_pred)
     se_true_list.append(rate_true)
+
+    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
+    rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
+    se_pred_list_primary.append(rate_pred_primary)
+    se_true_list_primary.append(rate_true_primary)
 
     # 2. Calculate Worst-Case Caused Interference on Primary Receivers
     max_interf_pred = sum(pred_p2) * max(cross_h_prim)
@@ -636,6 +645,9 @@ if len(test) > 0:
     binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
     binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
 
+    binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
+    binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
+
     binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
     binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
 
@@ -655,6 +667,26 @@ if len(test) > 0:
         os.path.join(
             RESULT_DIR,
             "secondary_rate_prompt_injection_attack.png"
+        ),
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+
+    plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(
+            RESULT_DIR,
+            "primary_rate_prompt_injection_attack.png"
         ),
         dpi=300,
         bbox_inches="tight"
