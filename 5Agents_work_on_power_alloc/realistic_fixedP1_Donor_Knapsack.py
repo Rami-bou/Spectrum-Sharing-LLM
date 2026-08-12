@@ -361,16 +361,21 @@ def gen_channels(length):
         for j in range(N):
             signal = P1_dist[j] * direct_h_primary[j]
             baseline_sinr_db = 10 * math.log10(signal)
-            target_th = get_mcs_threshold(baseline_sinr_db)  # guaranteed >= 0 now
+            target_th = get_mcs_threshold(baseline_sinr_db)
             min_linear_sinr = 10 ** (target_th / 10.0)
             max_interference = (signal / min_linear_sinr) - 1.0
-            if max_interference > 0 and cross_h_primary[j] > 0:
+
+            # FIX: If max_interference <= 0, this receiver can tolerate 0 interference.
+            if max_interference <= 0:
+                p2_limits.append(0.0)
+            elif cross_h_primary[j] > 0:
                 p2_limits.append(max_interference / cross_h_primary[j])
 
         if not p2_limits:
             continue
 
         allowed_p2 = int(math.floor(min(p2_limits)))
+        # This will cause invalid channel states (where allowed_p2 < M) to be properly rejected
         if allowed_p2 < M:
             continue
 
