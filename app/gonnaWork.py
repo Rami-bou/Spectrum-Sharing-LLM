@@ -739,23 +739,28 @@ for i in range(len(test)):
     }
     m1 = []
     m2 = []
+
     for j in range(len(test[i][0])):
-        signal = true_p1[j] * direct_h_prim    
+        signal = true_p1[j] * direct_h_prim[j]   
+        if signal <= 0:
+            continue
+
         baseline_sinr_db = 10 * math.log10(signal)
 
         target_th = get_mcs_threshold(baseline_sinr_db)
+
         if target_th < 0:
             continue
 
         # Actual SINR in dB with current P2 proposal
-        interference = sum(true_p2) * cross_h_prim
+        interference = sum(true_p2) * cross_h_prim[j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
 
         margin = actual_sinr_db - target_th
         m1.append(margin)
 
-        interference = sum(pred_p2) * cross_h_prim
+        interference = sum(pred_p2) * cross_h_prim[j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
 
