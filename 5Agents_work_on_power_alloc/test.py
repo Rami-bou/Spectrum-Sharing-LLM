@@ -1,7 +1,3 @@
-"""
-Need to fix the negotiation and start negotiate on the secondary MCS.
-"""
-
 import matplotlib.pyplot as plt
 import random
 import numpy as np
@@ -14,17 +10,14 @@ from langchain.messages import SystemMessage
 from pydantic import BaseModel, Field
 import os
 from langsmith import Client
-from typing import List, Dict, Any, Optional, TypedDict, Literal, Tuple
-from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Literal, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
-from langchain.messages import SystemMessage
-from pydantic import BaseModel, Field
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
-from langchain.chat_models import init_chat_model
 import math
 from dotenv import load_dotenv
+import csv
+from datetime import datetime
 
 # number of primary receivers
 N = 3
@@ -51,14 +44,9 @@ scale_factor = 1e8
 secondary_I_max = 3000
 primary_I_max = 1000
 
-
 primary_transmitter = [80, 80]
 secondary_transmitter = [20, 20]
 
-MCS = [
-    (2.0, 15), (5.0, 30), (9.0, 45), (11.0, 60),
-    (15.0, 90), (18.0, 120), (20.0, 150)
-]
 random.seed(11)
 
 def get_mcs_threshold(sinr_db):
@@ -71,30 +59,24 @@ def get_mcs_threshold(sinr_db):
             break
     return target_th
 
-def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
+def allocate_p1_knapsack_optimal(budget, direct_h_primary):
     """
-    Distributes allowed_p2 among secondary receivers to maximize aggregate 
+    Distributes allowed_p1 among primary receivers to maximize aggregate 
     discrete throughput using greedy Knapsack selection.
     """
-    M = len(direct_h_secondary)
-    P2_dist = [0] * M
-    budget = allowed_p2
+    N = len(direct_h_primary)
+    P1_dist = [0] * N
+    budget_left = budget
 
-    # Pre-calculate interference caused by Primary onto each Secondary receiver
-    total_p1_interf = [sum(P1_dist) * cross_h_secondary[i] for i in range(M)]
-
-    # Greedy allocation loop
-    while budget > 0:
+    while budget_left > 0:
         best_eff = -1.0
         best_user = -1
         best_cost = 0
 
-        for i in range(M):
-            # Calculate current SINR in dB
-            sinr_lin = (P2_dist[i] * direct_h_secondary[i]) / (1.0 + total_p1_interf[i])
+        for i in range(N):
+            sinr_lin = (P1_dist[i] * direct_h_primary[i]) 
             sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
 
-            # Find current rate and next MCS threshold
             curr_rate = 0
             next_th = None
             next_rate = 0
@@ -107,7 +89,62 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
                     next_rate = rate
                     break
 
-            # If an upgrade tier exists, evaluate cost and efficiency
+            if next_th is not None:
+                target_sinr_lin = 10 ** (next_th / 10.0)
+                required_p1 = target_sinr_lin / direct_h_primary[i]
+                cost = int(math.ceil(required_p1 - P1_dist[i]))
+
+                if 0 < cost <= budget_left:
+                    value = next_rate - curr_rate
+                    eff = value / float(cost)
+
+                    if eff > best_eff:
+                        best_eff = eff
+                        best_user = i
+                        best_cost = cost
+
+        if best_user != -1:
+            P1_dist[best_user] += best_cost
+            budget_left -= best_cost
+        else:
+            best_user = max(range(N), key=lambda k: direct_h_primary[k])
+            P1_dist[best_user] += budget_left
+            budget_left = 0
+
+    return P1_dist
+
+def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist):
+    """
+    Distributes allowed_p2 among secondary receivers to maximize aggregate 
+    discrete throughput using greedy Knapsack selection.
+    """
+    M = len(direct_h_secondary)
+    P2_dist = [0] * M
+    budget = allowed_p2
+
+    total_p1_interf = [sum(P1_dist) * cross_h_secondary[i] for i in range(M)]
+
+    while budget > 0:
+        best_eff = -1.0
+        best_user = -1
+        best_cost = 0
+
+        for i in range(M):
+            sinr_lin = (P2_dist[i] * direct_h_secondary[i]) / (1.0 + total_p1_interf[i])
+            sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
+
+            curr_rate = 0
+            next_th = None
+            next_rate = 0
+
+            for th, rate in MCS:
+                if sinr_db >= th:
+                    curr_rate = rate
+                elif next_th is None:
+                    next_th = th
+                    next_rate = rate
+                    break
+
             if next_th is not None:
                 target_sinr_lin = 10 ** (next_th / 10.0)
                 required_p2 = (target_sinr_lin * (1.0 + total_p1_interf[i])) / direct_h_secondary[i]
@@ -122,13 +159,10 @@ def allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_seconda
                         best_user = i
                         best_cost = cost
 
-        # If a valid upgrade user was found, purchase the upgrade
         if best_user != -1:
             P2_dist[best_user] += best_cost
             budget -= best_cost
         else:
-            # If remaining budget cannot push ANY user to a higher MCS level,
-            # dump the leftover budget into the receiver with the strongest direct channel.
             best_user = max(range(M), key=lambda k: direct_h_secondary[k])
             P2_dist[best_user] += budget
             budget = 0
@@ -154,13 +188,12 @@ def get_discrete_rate(sinr_linear):
 def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Calculates total Primary Throughput based on discrete MCS levels."""
     total_throughput_mbps = 0
-    total_P2 = sum(P2_vector) # Total P2 acts as interference to Primary
+    total_P2 = sum(P2_vector)
     
     for j in range(len(P1_vector)):
         signal = P1_vector[j] * direct_h_primary[j]
         interference_from_secondary = total_P2 * cross_h_primary[j]
         
-        # Calculate physical linear SINR (assuming Noise = 1.0)
         sinr_linear = signal / (1.0 + interference_from_secondary)
         total_throughput_mbps += get_discrete_rate(sinr_linear)
         
@@ -169,13 +202,12 @@ def calculate_primary_discrete_rate(P1_vector, P2_vector, direct_h_primary, cros
 def calculate_secondary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, cross_h_secondary):
     """Calculates total Secondary Throughput based on discrete MCS levels."""
     total_throughput_mbps = 0
-    total_P1 = sum(P1_vector) # Total P1 acts as interference to Secondary
+    total_P1 = sum(P1_vector) 
     
     for j in range(len(P2_vector)):
         signal = P2_vector[j] * direct_h_secondary[j]
         interference_from_primary = total_P1 * cross_h_secondary[j]
         
-        # Calculate physical linear SINR (assuming Noise = 1.0)
         sinr_linear = signal / (1.0 + interference_from_primary)
         total_throughput_mbps += get_discrete_rate(sinr_linear)
         
@@ -183,8 +215,6 @@ def calculate_secondary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, 
 
 def gen_channels(length):
     while len(data) < length:
-        # Primary receivers: bounded cell around their own TX (10-35m),
-        # kept away from the secondary transmitter's territory.
         position_primary_receiver = []
         direct_h_primary = []
         for i in range(N):
@@ -197,9 +227,6 @@ def gen_channels(length):
             h = (wave / (4 * np.pi * d))**2
             direct_h_primary.append(int(round(h * scale_factor, 2)))
 
-        # Secondary receivers: tight cluster around their own TX (1-5m).
-        # Needed so secondary's own SINR can reach the same MCS table primary uses --
-        # a spread-out secondary is always interference-limited to below MCS tier 0.
         position_secondary_receiver = []
         direct_h_secondary = []
         for i in range(M):
@@ -228,30 +255,24 @@ def gen_channels(length):
         if allowed_p1 < N:
             continue
 
-        inverses = [1.0 / v for v in direct_h_primary]
-        sum_inverses = sum(inverses)
-        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
-        # Reject the sample if ANY primary receiver fails to clear the lowest MCS
-        # tier at baseline (P2=0) -- this is what "best P1" actually means: don't
-        # silently skip weak receivers later, guarantee all of them qualify up front.
-        baseline_ok = True
-        for j in range(N):
-            signal = P1_dist[j] * direct_h_primary[j]
-            if signal <= 0 or get_mcs_threshold(10 * math.log10(signal)) < 0:
-                baseline_ok = False
-                break
-        if not baseline_ok:
+        sum_inverses = sum(1.0 / v for v in direct_h_primary)
+        aggregate_signal = allowed_p1 / sum_inverses
+
+        if aggregate_signal <= 0 or get_mcs_threshold(10 * math.log10(aggregate_signal)) < 0:
+            continue
+
+        baseline_sinr_db = 10 * math.log10(aggregate_signal)
+        target_th = get_mcs_threshold(baseline_sinr_db)
+        min_linear_sinr = 10 ** (target_th / 10.0)
+        max_interference = (aggregate_signal / min_linear_sinr) - 1.0
+
+        if max_interference <= 0:
             continue
 
         p2_limits = []
-        for j in range(N):
-            signal = P1_dist[j] * direct_h_primary[j]
-            baseline_sinr_db = 10 * math.log10(signal)
-            target_th = get_mcs_threshold(baseline_sinr_db)  # guaranteed >= 0 now
-            min_linear_sinr = 10 ** (target_th / 10.0)
-            max_interference = (signal / min_linear_sinr) - 1.0
-            if max_interference > 0 and cross_h_primary[j] > 0:
-                p2_limits.append(max_interference / cross_h_primary[j])
+        for cross_h in cross_h_primary:
+            if cross_h > 0:
+                p2_limits.append(max_interference / cross_h)
 
         if not p2_limits:
             continue
@@ -260,13 +281,7 @@ def gen_channels(length):
         if allowed_p2 < M:
             continue
 
-        inverses = [1.0 / v for v in direct_h_secondary]
-        sum_inverses = sum(inverses)
-        # floor (not round) guarantees sum(P2_dist) <= allowed_p2
-        # P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
-        P2_dist =allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
-
-        data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
+        data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, allowed_p1, allowed_p2])
 
     return data
 
@@ -298,50 +313,40 @@ class PrimaryOutput(BaseModel):
 
 def primary(state: GraphState) -> GraphState:
     """
-    The primary transmitter evaluates the secondary's proposed power allocation (P2) and provides feedback based on 
-    the worst-case MCS margin across all primary receivers.
+    The primary transmitter evaluates the secondary's proposed power allocation (P2) and provides feedback.
     """
     total_p2 = sum(state['P2'])
     margins = []
     
-    # 1. Calculate the MCS margin for every primary receiver
     for j in range(len(state['P1'])):
         signal = state['P1'][j] * state['direct_primary_channels'][j]
         if signal <= 0:
             continue
             
-        # Baseline SINR in dB (when P2 = 0)
         baseline_sinr_db = 10 * math.log10(signal)
-        
-        # Target MCS cliff threshold for this receiver
         target_th = get_mcs_threshold(baseline_sinr_db)
         if target_th < 0:
             continue
             
-        # Actual SINR in dB with current P2 proposal
         interference = total_p2 * state['cross_primary_channels'][j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
         
-        # Margin: How far above/below the cliff edge are we?
         margin = actual_sinr_db - target_th
         margins.append(margin)
 
-    # 2. Network safety depends on the weakest receiver
     worst_margin = min(margins) if margins else -999.0
     print(f"\n[Primary Evaluator] Worst MCS Margin: {worst_margin:.2f} dB")
 
     prompt_primary = f"""You are the Central Network Evaluator protecting Primary users' discrete data rates.
     You evaluate the 'Worst MCS Margin' (measured in dB). 
-    - A positive Margin means secondary interference is safely absorbed within the MCS step (no data loss).
-    - A negative Margin means secondary interference pushed a primary user off their MCS cliff, causing rate loss.
     
     Follow these exact decision bands:
     1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
     2. -3.0 dB <= Margin < -0.5 dB: action=DECREASE, severity=MEDIUM.
     3. -0.5 dB <= Margin < 0.0 dB: decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 dB <= Margin <= 0.5 dB: decision=ACCEPT.
-    5. 0.5 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
+    4. 0.0 dB <= Margin <= 2.0 dB: decision=ACCEPT.
+    5. 2.0 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
     6. Margin > 5.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
     Your critique must explicitly mention the amount of the worst margin.
@@ -353,7 +358,7 @@ def primary(state: GraphState) -> GraphState:
     resp = structured_critic.invoke([
         SystemMessage(content=prompt_primary),
         HumanMessage(content=f"""
-        P2 Allocations proposed: {state['P2']}
+        Total P2 Proposed: {total_p2}
         Worst Primary MCS Margin: {worst_margin:.2f} dB
         """
         )
@@ -368,57 +373,58 @@ def primary(state: GraphState) -> GraphState:
 
     return state
 
+# --- NEW: Changed list output to an integer sum output ---
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
-    allocation_secondary: List[int] = Field(description="Your allocation for all of your secondary receivers.")
+    total_secondary_power: int = Field(description="Your predicted total power budget (sum of P2) for all secondary receivers.")
 
 class SecondaryRemainRounds(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
 
 def secondary(state:GraphState) -> GraphState:
-    """The Secondary Network Optimizer, operating alongside a Primary Network, 
-    aims to maximize the Secondary Power (P2) budget without violating the Primary user's discrete MCS data rate.
-    """
+    """The Secondary Network Optimizer"""
     if not state['primary_critique']:
         structured_critic = llm.with_structured_output(SecondaryOutput)
         resp = structured_critic.invoke([
             SystemMessage(content=prompt_secondary_allocation),
-            HumanMessage(content=f"""Complete thr following allocations depends on the channels:
+            HumanMessage(content=f"""Predict the Total Power (P2 budget) for the secondary network:
 
-            If the secondary channels are {state['direct_secondary_channels']}
-            Then the Power (P2) allocation are:  
+            If the direct secondary channels are {state['direct_secondary_channels']}
+            And the cross secondary channels are {state['cross_secondary_channels']}
+            Then the Total Power (P2) is:  
             """
             )
         ])
 
-        print(f"P2 First Round Allocation {resp.allocation_secondary}")
-        state['P2'] = resp.allocation_secondary
+        print(f"P2 First Round Total Allocation: {resp.total_secondary_power}")
+        # --- NEW: Immediately distribute the sum using Knapsack ---
+        state['P2'] = allocate_p2_knapsack_optimal(
+            resp.total_secondary_power, 
+            state['direct_secondary_channels'], 
+            state['cross_secondary_channels'], 
+            state['P1']
+        )
+        print(f"Distributed as: {state['P2']}")
 
     else:
         prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
         Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
         
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 1.0 dB.
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB.
         
         You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
         
         [DECREASE ACTIONS - Margin < 0.0 dB]
         Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
-        - Worst Case Anchor (Margin <= -10.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
-        - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
-        - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
         
-        [INCREASE ACTIONS - Margin > 1.0 dB]
-        Allowed Steps: [+1, +2, +3, +5, +10, +15, +20, +25, +30]
-        - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +30.
-        - Least Case Anchor (Margin = +1.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
-        - In Between: Evaluate where the current margin falls between +1.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +15, +20). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
+        [INCREASE ACTIONS - Margin > 2.0 dB]
+        Allowed Steps: [+1, +2, +3, +5, +10, +15]
 
         CRITICAL RULES:
         1. You must ONLY select a step value from the Allowed Steps lists provided above.
         2. Always output a NEGATIVE integer if the action is DECREASE. Always output a POSITIVE integer if the action is INCREASE.
-        3. Oscillation Check: Look at your `delta_hist`. If your last step caused the margin to flip polarity (e.g., from positive to negative), you jumped too far. You MUST reverse direction and pick a step from the list that is strictly smaller in magnitude than your previous step.
+        3. Oscillation Check: Look at your `delta_hist`. If your last step caused the margin to flip polarity, reverse direction and pick a smaller step.
 
         Return JSON matching the schema.
         """
@@ -427,7 +433,7 @@ def secondary(state:GraphState) -> GraphState:
         resp = structured_critic.invoke([
             SystemMessage(content=prompt),
             HumanMessage(content=f"""
-            Secondary Current P2 Proposal: {state['P2']}
+            Secondary Current Total P2 Proposal: {sum(state['P2'])}
             Your own step history: {state['delta_hist']}
             Primary decision: {state['primary_decision']}
             Primary critique: {state["primary_critique"]}
@@ -441,24 +447,28 @@ def secondary(state:GraphState) -> GraphState:
         print(f"Delta: {resp.step}")
 
         P2_new = int(max(1, total_p2 + resp.step))
-        inverses = [1.0 / v for v in state['direct_secondary_channels']]
-        sum_inverses = sum(inverses)
-        # state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
-        state['P2'] =allocate_p2_knapsack_optimal(P2_new, state['direct_secondary_channels'], state['cross_secondary_channels'], state['P1'])
+        # --- NEW: Continue distributing updated sum using Knapsack ---
+        state['P2'] = allocate_p2_knapsack_optimal(
+            P2_new, 
+            state['direct_secondary_channels'], 
+            state['cross_secondary_channels'], 
+            state['P1']
+        )
 
-        print(f"New power after delta: {state['P2']}")
+        print(f"New total power after delta: {P2_new} -> Distributed: {state['P2']}")
 
     return state
 
+# --- NEW: Updated prompt builder to train LLM on Sums, not arrays ---
 def build_prompt(train):
     prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
-    Your job is to allocate a transmission power for each one of your receivers.
-    Here is some examples on good allocations based on the channel states:\n
+    Your job is to predict the optimal TOTAL transmission power (P2 budget) for your network.
+    Here are some examples of perfect total allocations based on channel states:\n
     """
     for i in range(len(train)):
         prompt_primary += f"""
-        If the secondary channels are {train[i][1]}
-        Then the Power (P2) allocation are: {train[i][5]}    
+        If the direct secondary channels are {train[i][1]} and cross secondary channels are {train[i][3]}
+        Then the Optimal Total Power (P2) is: {train[i][5]}    
         """
     
     prompt_primary += "\nReturn JSON matching the schema."
@@ -469,7 +479,6 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
     if state["iteration"] > 3:
         return "finalize"
-    # earsly stop
     if state['primary_decision'] == "ACCEPT":
         return "finalize"
 
@@ -494,92 +503,183 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
-data = gen_channels(120)
+data = gen_channels(190)
 train = data[:90]
-test = data[90:100]
+test = data[90:150]
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 prompt_secondary_allocation = build_prompt(train)
-all_pred_P2 = []
-all_true_P2 = []
+
+RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
+os.makedirs(RESULT_DIR, exist_ok=True)
+
+def save_file(path):
+    with open(path, "w") as f:
+        f.write("=" * 60 + "\n")
+        f.write("BASELINE PERFORMANCE\n")
+        f.write("=" * 60 + "\n\n")
+        f.write(f"Average Secondary Rate      : {np.mean(se_pred_list):.2f} Mbps\n")
+        f.write(f"Average Optimal Rate        : {np.mean(se_true_list):.2f} Mbps\n")
+        efficiency = 100 * np.mean(se_pred_list) / np.mean(se_true_list)
+        f.write(f"Efficiency                 : {efficiency:.2f} %\n\n")
+        f.write(f"Average Interference        : {np.mean(interf_pred_list):.2f}\n")
+        f.write(f"Maximum Interference        : {np.max(interf_pred_list):.2f}\n")
+        violation_rate = 100 * np.mean(violation_list)
+        f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
+        success_rate = 100 * np.mean(success_list)
+        f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
+
 se_pred_list = []
 se_true_list = []
+interf_pred_list = []
+interf_true_list = []
+success_list = []
+violation_list = []
+se_pred_list_primary = []
+se_true_list_primary = []
 
-print("\nStarting Benchmark over Test Dataset...")
+csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
+csv_file = open(csv_path, "w", newline="")
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow([
+    "Sample",
+    "TrueRate",
+    "PredRate",
+    "TrueInterference",
+    "PredInterference",
+    "Violation",
+    "Rounds",
+    "Decision",
+    "TrueP2",
+    "PredP2"
+])
+
+print(f"\nStarting Benchmark over {len(test)} Test Samples...")
+
 for i in range(len(test)):
-    direct_h_sec = test[i][1] 
-    cross_h_sec = test[i][3]  
-    true_p1 = test[i][4]      
-    true_p2 = test[i][5] 
-    
+    direct_h_prim = test[i][0]
+    direct_h_sec = test[i][1]
+    cross_h_prim = test[i][2]
+    cross_h_sec = test[i][3]
+
+    true_p1_total = test[i][4]
+    true_p2_total = test[i][5]
+
+    # --- NEW: Calculate the true array distributions to pass into GraphState ---
+    true_p1_dist = allocate_p1_knapsack_optimal(true_p1_total, direct_h_prim)
+    true_p2_dist = allocate_p2_knapsack_optimal(true_p2_total, direct_h_sec, cross_h_sec, true_p1_dist)
+
     initial_state = {
-        "direct_primary_channels": test[i][0],
-        "direct_secondary_channels": test[i][1],
-        "cross_primary_channels": test[i][2],
-        "cross_secondary_channels": test[i][3],
-        "P1": test[i][4],                      
+        "direct_primary_channels": direct_h_prim,
+        "direct_secondary_channels": direct_h_sec,
+        "cross_primary_channels": cross_h_prim,
+        "cross_secondary_channels": cross_h_sec,
+        "P1": true_p1_dist,  # Now passing the Distributed Array
         "P2": [0] * M,
         "primary_critique": "",
+        "secondary_critique": "",
         "primary_decision": "",
         "delta_hist": [],
         "iteration": 0
     }
 
     result = app.invoke(initial_state)
+    pred_p2_dist = result['P2']
+
+    rate_pred = calculate_secondary_discrete_rate(true_p1_dist, pred_p2_dist, direct_h_sec, cross_h_sec)
+    rate_true = calculate_secondary_discrete_rate(true_p1_dist, true_p2_dist, direct_h_sec, cross_h_sec)
+    se_pred_list.append(rate_pred)
+    se_true_list.append(rate_true)
+
+    rate_pred_primary = calculate_primary_discrete_rate(true_p1_dist, pred_p2_dist, direct_h_prim, cross_h_prim)
+    rate_true_primary = calculate_primary_discrete_rate(true_p1_dist, true_p2_dist, direct_h_prim, cross_h_prim)
+    se_pred_list_primary.append(rate_pred_primary)
+    se_true_list_primary.append(rate_true_primary)
+
+    max_interf_pred = sum(pred_p2_dist) * max(cross_h_prim)
+    max_interf_true = sum(true_p2_dist) * max(cross_h_prim)
+    interf_pred_list.append(max_interf_pred)
+    interf_true_list.append(max_interf_true)
     
-    pred_p2 = result['P2']
-    
-    all_pred_P2.append(pred_p2)
-    all_true_P2.append(true_p2)
-    
-    se_pred_list.append(calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec))
-    se_true_list.append(calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec))
+    success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
+    violation_list.append(1 if max_interf_pred > primary_I_max else 0)
 
-    print(f"Allocation P2 pred: {result['P2']}")
-    print(f"Allocation P2 true: {test[i][5]}")
+    csv_writer.writerow([
+        i + 1,
+        rate_true,
+        rate_pred,
+        max_interf_true,
+        max_interf_pred,
+        violation_list[i],
+        result["iteration"],
+        result["primary_decision"],
+        sum(true_p2_dist),
+        sum(pred_p2_dist)
+    ])
 
-all_pred_P2 = np.array(all_pred_P2) 
-all_true_P2 = np.array(all_true_P2) 
+    print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
+    print(f"True Total P2: {sum(true_p2_dist)} -> Dist: {true_p2_dist}")
+    print(f"Pred Total P2: {sum(pred_p2_dist)} -> Dist: {result['P2']}")
 
-mae_per_receiver = np.mean(np.abs(all_pred_P2 - all_true_P2), axis=0)
+csv_file.close()
+metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
+save_file(metrics_path)
+print(f"System Benchmark Before attack:\n")
+print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
+print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
+print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
+print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
+print(f"Efficiency: {np.mean(success_list):.0%}")
+print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
-print("\n" + "="*40)
-print(" BENCHMARK RESULTS: MEAN ABSOLUTE ERROR ")
-print("="*40)
-for j in range(len(mae_per_receiver)):
-    print(f"Secondary Receiver {j+1} MAE: {mae_per_receiver[j]:.2f} Watts")
-print("="*40 + "\n")
+if len(test) > 0:
+    bin_size = 5
+    num_bins = (len(test) + bin_size - 1) // bin_size
+    bin_x = [i * bin_size for i in range(1, num_bins + 1)]
 
-window_size = 5 if len(test) < 50 else 10
+    binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
+    binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
+    binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
+    binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
+    binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
+    binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
 
-def moving_average(data, w):
-    """Calculates the moving average shifting by 1 step at a time."""
-    return np.convolve(data, np.ones(w), 'valid') / w
+    plt.figure(figsize=(10, 5))
+    plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+    plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULT_DIR, "secondary_rate_normal.png"), dpi=300, bbox_inches="tight")
 
-smoothed_se_pred = moving_average(se_pred_list, window_size)
-smoothed_se_true = moving_average(se_true_list, window_size)
+    plt.figure(figsize=(10, 5))
+    plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+    plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULT_DIR, "primary_rate_normal.png"), dpi=300, bbox_inches="tight")
 
-plt.figure(figsize=(12, 6))
-plt.plot(smoothed_se_true, label=f'True Optimal Primary SE', color='blue', linestyle='--', marker='o', markersize=4)
-plt.plot(smoothed_se_pred, label=f'Agent-Protected Primary SE', color='red', linestyle='-', marker='s', markersize=4)
+    plt.figure(figsize=(10, 5))
+    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
+    plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
+    plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.ylabel('Average Max Interference Injected', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11, loc='upper right')
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULT_DIR, "primary_interference_normal.png"), dpi=300, bbox_inches="tight")
 
-plt.title(f'Primary Network Spectral Efficiency Comparison\n(Moving Average, Window={window_size})', fontsize=14)
-plt.xlabel('Test Sample Index (Rolling Window)', fontsize=12)
-plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
-plt.legend(fontsize=12)
-plt.grid(True, linestyle=':', alpha=0.7)
-plt.tight_layout()
-plt.savefig("Result_MCS.png")
-
-pred_p2_sum = [sum(p) for p in all_pred_P2]
-true_p2_sum = [sum(p) for p in all_true_P2]
-
-plt.figure(figsize=(12, 6))
-plt.plot(moving_average(true_p2_sum, window_size), label='True Optimal Secondary Power (P2)', color='blue', linestyle='--')
-plt.plot(moving_average(pred_p2_sum, window_size), label='Agent Allocated Secondary Power (P2)', color='red', linestyle='-')
-plt.title('Secondary Network Transmit Power Budget (P2) Comparison')
-plt.xlabel('Test Sample Index')
-plt.ylabel('Total Allocated P2 Power (Watts)')
-plt.legend()
-plt.grid(True, linestyle=':', alpha=0.7)
-plt.savefig("Result_P2_Power.png")
-
-plt.show()
+    plt.show()
+else:
+    print("No test samples to plot.")
