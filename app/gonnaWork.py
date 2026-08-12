@@ -424,6 +424,8 @@ class GraphState(TypedDict):
     secondary_critique: str
 
     primary_decision: str
+    primary_action: str
+    primary_severity: str
 
     delta_hist: List[int]
 
@@ -508,6 +510,8 @@ def primary(state: GraphState) -> GraphState:
 
     state['primary_critique'] = resp.critique + penalty_text
     state['primary_decision'] = resp.decision
+    state['primary_action'] = resp.action
+    state['primary_severity'] = resp.severity
     state['iteration'] += 1
 
     print(f"[Decision]: {resp.decision} ({resp.severity})")
@@ -563,13 +567,13 @@ def secondary(state:GraphState) -> GraphState:
         [DECREASE ACTIONS - Margin < 0.0 dB]
         Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
         - Worst Case Anchor (Margin <= -4.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
-        - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
+        - Least Case Anchor (Margin = -1.0 dB): You barely crossed the threshold. Choose the smallest step: -1.
         - In Between: Evaluate where the current margin falls between -0.1 dB and -4.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
         
         [INCREASE ACTIONS - Margin > 4.0 dB]
         Allowed Steps: [+1, +2, +3, +5, +10, +15]
         - Worst Case Anchor (Margin >= +7.0 dB): The primary has massive excess margin. Choose the biggest step: +15.
-        - Least Case Anchor (Margin = +4.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
+        - Least Case Anchor (Margin = +4.0 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
         - In Between: Evaluate where the current margin falls between +4.1 dB and +7.0 dB. If it leans toward massive excess, pick a larger step (e.g., +10, +15). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
 
         CRITICAL RULES:
@@ -588,6 +592,8 @@ def secondary(state:GraphState) -> GraphState:
             Your own step history: {state['delta_hist']}
             Primary decision: {state['primary_decision']}
             Primary critique: {state["primary_critique"]}
+            Primary action: {state["primary_action"]}
+            primary severity: {state["primary_severity"]}
             """
             )
         ])
@@ -734,6 +740,8 @@ for i in range(len(test)):
         "primary_critique": "",
         "secondary_critique": "",
         "primary_decision": "",
+        "primary_action": "",
+        "primary_severity": "",
         "delta_hist": [],
         "iteration": 0
     }
