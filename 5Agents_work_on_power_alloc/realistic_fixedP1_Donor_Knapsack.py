@@ -339,8 +339,8 @@ def gen_channels(length):
 
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
-        # P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
-        P1_dist = allocate_p1_knapsack_optimal(allowed_p1, direct_h_primary)
+        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
+        # P1_dist = allocate_p1_knapsack_optimal(allowed_p1, direct_h_primary)
 
         for p,h in zip(P1_dist, direct_h_primary):
           print(get_mcs_threshold(10*math.log10(p*h)))
