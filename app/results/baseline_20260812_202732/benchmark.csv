@@ -1,0 +1,2 @@
+Sample,TrueRate,PredRate,TrueInterference,PredInterference,Violation,Rounds,Decision,TrueP2,PredP2
+1,210,105,368,78,0,4,REJECT,184,39

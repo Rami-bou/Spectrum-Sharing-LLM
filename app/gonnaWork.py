@@ -653,7 +653,7 @@ def build_prompt(train):
 
 data = gen_channels(190)
 train = data[:90]
-test = data[90:110]
+test = data[90:91]
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 prompt_secondary_allocation = build_prompt(train)
 
@@ -737,6 +737,13 @@ for i in range(len(test)):
         "delta_hist": [],
         "iteration": 0
     }
+
+
+
+
+    result = app.invoke(initial_state)
+    pred_p2 = result['P2']
+
     m1 = []
     m2 = []
 
@@ -769,13 +776,6 @@ for i in range(len(test)):
 
     print(f"Margin Cuased by True P2: {max(m1):.2f} dB")
     print(f"Margin Cuased by Pred P2: {max(m2):.2f} dB")
-
-
-
-
-    result = app.invoke(initial_state)
-    pred_p2 = result['P2']
-
     # 1. Calculate Discrete Secondary Rates
     rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
     rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
