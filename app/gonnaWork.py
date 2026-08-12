@@ -760,7 +760,7 @@ for i in range(len(test)):
         margin = actual_sinr_db - target_th
         m1.append(margin)
 
-        interference = sum(pred_p2) * cross_h_prim[j]
+        interference = sum(result['P2']) * cross_h_prim[j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
 
