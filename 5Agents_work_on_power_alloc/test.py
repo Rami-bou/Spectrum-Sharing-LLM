@@ -573,7 +573,7 @@ for i in range(len(test)):
         "direct_secondary_channels": direct_h_sec,
         "cross_primary_channels": cross_h_prim,
         "cross_secondary_channels": cross_h_sec,
-        "P1": true_p1_dist,  # Now passing the Distributed Array
+        "P1": true_p1_dist,
         "P2": [0] * M,
         "primary_critique": "",
         "secondary_critique": "",
