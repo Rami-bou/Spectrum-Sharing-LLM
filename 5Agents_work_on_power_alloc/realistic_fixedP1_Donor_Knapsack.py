@@ -370,11 +370,12 @@ def primary(state: GraphState) -> GraphState:
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     allocation_secondary: List[int] = Field(description="Your allocation for all of your secondary receivers.")
-    message: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
+    message: str = Field(description="You send a message to the primary user, explaining your allocation and how it will not violate their discrete MCS data rate.")
 
 class SecondaryRemainRounds(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
+    message: str = Field(description="You send a message to the primary user, explaining your allocation and how it will not violate their discrete MCS data rate.")
 
 def secondary(state:GraphState) -> GraphState:
     """The Secondary Network Optimizer, operating alongside a Primary Network,
@@ -432,6 +433,7 @@ def secondary(state:GraphState) -> GraphState:
             )
         ])
 
+        state['secondary_critique'] = resp.message
         total_p2 = sum(state['P2'])
         state['delta_hist'].append(resp.step)
         print(f"Delta: {resp.step}")
@@ -450,7 +452,7 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
     if state["iteration"] > 3:
         return "finalize"
-    # earsly stop
+    # early stop
     if state['primary_decision'] == "ACCEPT":
         return "finalize"
 
