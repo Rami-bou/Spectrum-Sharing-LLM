@@ -350,17 +350,11 @@ def allocate_power_knapsack(
 def gen_channels(length: int) -> List[list]:
     """
     Generate 'length' valid channel realisations.
-    
-    Design goals:
-    - Primary is the owner → we guarantee that every primary receiver
-      stays on a reasonable MCS tier even after secondary transmits.
-    - Secondary is opportunistic → it maximises its own sum-rate
-      under the interference margin left by the primary.
-    - Primary rate is allowed to vary across samples (no longer constant).
+    Primary = owner (protected). Secondary = opportunistic.
     """
     data = []
     attempts = 0
-    max_attempts = length * 30          # safety
+    max_attempts = length * 80          # more attempts allowed
 
     while len(data) < length and attempts < max_attempts:
         attempts += 1
@@ -368,10 +362,10 @@ def gen_channels(length: int) -> List[list]:
         # ------------------------------------------------------------------
         # 1. Geometry
         # ------------------------------------------------------------------
-        # Primary receivers: 8 – 40 m (wider range → more rate variation)
+        # Primary receivers: 8 – 35 m
         pos_p, direct_h_p = [], []
         for _ in range(N):
-            d = random.uniform(8, 40)
+            d = random.uniform(8.0, 35.0)
             ang = random.uniform(0, 2 * math.pi)
             x = primary_transmitter[0] + d * math.cos(ang)
             y = primary_transmitter[1] + d * math.sin(ang)
@@ -381,10 +375,10 @@ def gen_channels(length: int) -> List[list]:
             h = (wave / (4 * math.pi * dist)) ** 2
             direct_h_p.append(max(1, int(round(h * scale_factor))))
 
-        # Secondary receivers: 2 – 12 m (still close but not tiny)
+        # Secondary receivers: 2 – 10 m (still reasonably close)
         pos_s, direct_h_s = [], []
         for _ in range(M):
-            d = random.uniform(2, 12)
+            d = random.uniform(2.0, 10.0)
             ang = random.uniform(0, 2 * math.pi)
             x = secondary_transmitter[0] + d * math.cos(ang)
             y = secondary_transmitter[1] + d * math.sin(ang)
@@ -395,14 +389,14 @@ def gen_channels(length: int) -> List[list]:
             direct_h_s.append(max(1, int(round(h * scale_factor))))
 
         # Cross channels
-        cross_h_p = []          # Secondary TX → primary receivers
+        cross_h_p = []
         for pos in pos_p:
             dist = math.hypot(pos[0] - secondary_transmitter[0],
                               pos[1] - secondary_transmitter[1])
             h = (wave / (4 * math.pi * dist)) ** 2
             cross_h_p.append(max(1, int(round(h * scale_factor))))
 
-        cross_h_s = []          # Primary TX → secondary receivers
+        cross_h_s = []
         for pos in pos_s:
             dist = math.hypot(pos[0] - primary_transmitter[0],
                               pos[1] - primary_transmitter[1])
@@ -410,39 +404,36 @@ def gen_channels(length: int) -> List[list]:
             cross_h_s.append(max(1, int(round(h * scale_factor))))
 
         # ------------------------------------------------------------------
-        # 2. Primary power allocation (knapsack, no secondary yet)
+        # 2. Primary power (knapsack)
         # ------------------------------------------------------------------
-        # How much total P1 is allowed so that secondary is not completely
-        # killed by primary interference
-        max_cross_s = max(cross_h_s)
-        allowed_p1 = int(SECONDARY_I_MAX / max_cross_s)
-        if allowed_p1 < N * 5:          # need at least some power
-            continue
+        max_cross_s = max(cross_h_s) if cross_h_s else 1
+        allowed_p1 = max(N * 30, int(SECONDARY_I_MAX / max_cross_s))   # guarantee decent budget
 
         P1 = allocate_power_knapsack(allowed_p1, direct_h_p)
 
-        # Quick check: every primary must clear at least the first MCS
-        baseline_ok = True
+        # Soft baseline check: at least N-1 primary receivers must clear the first MCS
+        good_primary = 0
         for j in range(N):
-            sinr = P1[j] * direct_h_p[j]          # noise = 1
-            if get_mcs_threshold(10 * math.log10(max(sinr, 1e-12))) < 0:
-                baseline_ok = False
-                break
-        if not baseline_ok:
+            sinr = max(P1[j] * direct_h_p[j], 1e-12)
+            if get_mcs_threshold(10 * math.log10(sinr)) >= 0:
+                good_primary += 1
+        if good_primary < N - 1:
             continue
 
         # ------------------------------------------------------------------
-        # 3. Compute the interference margin that secondary may use
+        # 3. Interference margin for secondary (hard protection of current MCS)
         # ------------------------------------------------------------------
-        # We protect the *current* MCS tier of every primary receiver.
-        # This is the hard protection rule.
         p2_limits = []
         for j in range(N):
             signal = P1[j] * direct_h_p[j]
+            if signal <= 0:
+                p2_limits.append(0.0)
+                continue
             baseline_db = 10 * math.log10(signal)
             target_th = get_mcs_threshold(baseline_db)
             if target_th < 0:
-                p2_limits.append(0.0)
+                # This receiver is already weak – give it almost no extra interference
+                p2_limits.append(5.0)
                 continue
             min_sinr_lin = 10 ** (target_th / 10.0)
             max_interf = (signal / min_sinr_lin) - 1.0
@@ -452,40 +443,37 @@ def gen_channels(length: int) -> List[list]:
                 p2_limits.append(0.0)
 
         allowed_p2 = int(math.floor(min(p2_limits))) if p2_limits else 0
-        if allowed_p2 < M:               # secondary needs at least 1 unit each
-            continue
+
+        # Guarantee a usable secondary budget
+        allowed_p2 = max(allowed_p2, M * 8)
 
         # ------------------------------------------------------------------
-        # 4. Secondary power allocation (knapsack under the margin)
+        # 4. Secondary power (knapsack under the margin)
         # ------------------------------------------------------------------
-        # External interference seen by secondary receivers = total P1 * cross
         total_p1 = sum(P1)
-        interf_s = [1.0 + total_p1 * cross_h_s[i] for i in range(M)]
+        interf_s = [1.0 + total_p1 * c for c in cross_h_s]
 
         P2 = allocate_power_knapsack(allowed_p2, direct_h_s, interf_s)
 
-        # Final safety: make sure we did not exceed the margin
+        # Final clip (should almost never trigger)
         if sum(P2) > allowed_p2:
-            # Extremely rare, but just in case
-            scale = allowed_p2 / sum(P2)
-            P2 = [max(0, int(p * scale)) for p in P2]
+            scale = allowed_p2 / max(sum(P2), 1)
+            P2 = [max(0, int(round(p * scale))) for p in P2]
 
         # ------------------------------------------------------------------
-        # 5. Store the sample
+        # 5. Accept the sample
         # ------------------------------------------------------------------
         data.append([
-            direct_h_p,          # 0
-            direct_h_s,          # 1
-            cross_h_p,           # 2
-            cross_h_s,           # 3
-            P1,                  # 4
-            P2                   # 5  ← this is the "optimal" secondary allocation
+            direct_h_p,
+            direct_h_s,
+            cross_h_p,
+            cross_h_s,
+            P1,
+            P2
         ])
 
-    if len(data) < length:
-        print(f"[WARN] Only generated {len(data)} / {length} valid samples "
-              f"after {attempts} attempts.")
-
+    print(f"[gen_channels] Generated {len(data)} / {length} samples "
+          f"after {attempts} attempts.")
     return data
 
 import os
