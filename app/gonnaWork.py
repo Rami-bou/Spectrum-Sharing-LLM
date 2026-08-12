@@ -737,30 +737,33 @@ for i in range(len(test)):
         "delta_hist": [],
         "iteration": 0
     }
+    m1 = []
+    m2 = []
+    for _ in range(len(test[i][0])):
+        signal = true_p1 * direct_h_prim    
+        baseline_sinr_db = 10 * math.log10(signal)
 
-    signal = true_p1 * direct_h_prim    
-    baseline_sinr_db = 10 * math.log10(signal)
+        target_th = get_mcs_threshold(baseline_sinr_db)
+        if target_th < 0:
+            continue
 
-    target_th = get_mcs_threshold(baseline_sinr_db)
-    if target_th < 0:
-        continue
+        # Actual SINR in dB with current P2 proposal
+        interference = sum(true_p2) * cross_h_prim
+        actual_sinr_linear = signal / (1.0 + interference)
+        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
 
-    # Actual SINR in dB with current P2 proposal
-    interference = sum(true_p2) * cross_h_prim
-    actual_sinr_linear = signal / (1.0 + interference)
-    actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
+        margin = actual_sinr_db - target_th
+        m1.append(margin)
 
-    margin = actual_sinr_db - target_th
+        interference = sum(pred_p2) * cross_h_prim
+        actual_sinr_linear = signal / (1.0 + interference)
+        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
 
-    print(f"Margin Cuased by True P2: {margin:.2f} dB")
+        margin = actual_sinr_db - target_th
+        m2.append(margin)
 
-    interference = sum(pred_p2) * cross_h_prim
-    actual_sinr_linear = signal / (1.0 + interference)
-    actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-
-    margin = actual_sinr_db - target_th
-
-    print(f"Margin Cuased by Pred P2: {margin:.2f} dB")
+    print(f"Margin Cuased by True P2: {max(m1):.2f} dB")
+    print(f"Margin Cuased by Pred P2: {max(m2):.2f} dB")
 
 
 
