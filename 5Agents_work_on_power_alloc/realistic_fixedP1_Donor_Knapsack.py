@@ -231,91 +231,21 @@ def allocate_p1_knapsack_optimal(budget, direct_h_primary):
     P1_dist = [0] * N
     budget_left = budget
 
-    MCS = [
-    (2.0, 15),   # threshold dB → rate Mbps
-    (5.0, 30),
-    (9.0, 45),
-    (11.0, 60),
-    (15.0, 90),
-    (18.0, 120),
-    (20.0, 150)
-]
-
-N = 3   # primary receivers
-M = 3   # secondary receivers
-
-f = 2e9
-c = 3e8
-wave = c / f
-scale_factor = 1e8
-
-# Interference limits (you can tune these)
-PRIMARY_I_MAX   = 1000   # hard limit used only for final violation check
-SECONDARY_I_MAX = 3000   # used when deciding how much total P1 is allowed
-
-primary_transmitter   = [80.0, 80.0]
-secondary_transmitter = [20.0, 20.0]
-
-random.seed(42)   # reproducible
-
-
-def get_mcs_threshold(sinr_db: float) -> float:
-    """Return the highest MCS threshold that the given SINR can support.
-       Returns -999 if even the lowest MCS is not reached."""
-    target = -999.0
-    for th, _ in MCS:
-        if sinr_db >= th:
-            target = th
-        else:
-            break
-    return target
-
-
-def get_discrete_rate(sinr_linear: float) -> int:
-    if sinr_linear <= 0:
-        return 0
-    sinr_db = 10 * math.log10(sinr_linear)
-    rate = 0
-    for th, r in MCS:
-        if sinr_db >= th:
-            rate = r
-        else:
-            break
-    return rate
-
-
-def allocate_power_knapsack(
-    budget: int,
-    direct_h: List[float],
-    interference: List[float] = None
-) -> List[int]:
-    """
-    Generic greedy knapsack power allocator.
-    Maximises sum of discrete MCS rates under a total power budget.
-    
-    interference[i] = noise + external interference seen by receiver i
-    (pass None or zeros when there is no external interference)
-    """
-    K = len(direct_h)
-    if interference is None:
-        interference = [1.0] * K          # pure noise = 1.0
-
-    power = [0] * K
-    remaining = budget
-
-    while remaining > 0:
+    while budget_left > 0:
         best_eff = -1.0
         best_user = -1
         best_cost = 0
 
-        for i in range(K):
-            # Current SINR
-            sinr_lin = (power[i] * direct_h[i]) / interference[i]
+        for i in range(N):
+            # Calculate current SINR in dB (Noise = 1.0, P2=0 at this stage)
+            sinr_lin = (P1_dist[i] * direct_h_primary[i]) 
             sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
 
+            # Find current rate and next MCS threshold
             curr_rate = 0
             next_th = None
             next_rate = 0
+
             for th, rate in MCS:
                 if sinr_db >= th:
                     curr_rate = rate
@@ -324,156 +254,157 @@ def allocate_power_knapsack(
                     next_rate = rate
                     break
 
+            # Evaluate upgrade cost and efficiency
             if next_th is not None:
-                target_sinr = 10 ** (next_th / 10.0)
-                required = (target_sinr * interference[i]) / direct_h[i]
-                cost = math.ceil(required - power[i])
-                if 0 < cost <= remaining:
+                target_sinr_lin = 10 ** (next_th / 10.0)
+                required_p1 = target_sinr_lin / direct_h_primary[i]
+                cost = int(math.ceil(required_p1 - P1_dist[i]))
+
+                if 0 < cost <= budget_left:
                     value = next_rate - curr_rate
-                    eff = value / cost
+                    eff = value / float(cost)
+
                     if eff > best_eff:
                         best_eff = eff
                         best_user = i
                         best_cost = cost
 
+        # Apply the best upgrade
         if best_user != -1:
-            power[best_user] += best_cost
-            remaining -= best_cost
+            P1_dist[best_user] += best_cost
+            budget_left -= best_cost
         else:
-            # Dump remaining power on the strongest channel
-            best = max(range(K), key=lambda k: direct_h[k])
-            power[best] += remaining
-            remaining = 0
+            # Dump leftover budget into the receiver with the strongest direct channel
+            best_user = max(range(N), key=lambda k: direct_h_primary[k])
+            P1_dist[best_user] += budget_left
+            budget_left = 0
 
-    return power
+    return P1_dist
 
-def gen_channels(length: int) -> List[list]:
-    """
-    Generate 'length' valid channel realisations.
-    Primary = owner (protected). Secondary = opportunistic.
-    """
-    data = []
-    attempts = 0
-    max_attempts = length * 80          # more attempts allowed
+def gen_channels(length):
+    while len(data) < length:
+        # Primary receivers: bounded cell around their own TX (10-35m),
+        # kept away from the secondary transmitter's territory.
+        position_primary_receiver = []
+        direct_h_primary = []
+        for i in range(N):
+            dist_r = random.uniform(10, 35)
+            angle = random.uniform(0, 2 * math.pi)
+            rp = [primary_transmitter[0] + dist_r * math.cos(angle),
+                  primary_transmitter[1] + dist_r * math.sin(angle)]
+            position_primary_receiver.append(rp)
+            d = np.sqrt((rp[0]-primary_transmitter[0])**2 + (rp[1]-primary_transmitter[1])**2)
+            h = (wave / (4 * np.pi * d))**2
+            direct_h_primary.append(int(round(h * scale_factor, 2)))
 
-    while len(data) < length and attempts < max_attempts:
-        attempts += 1
+        # Secondary receivers: tight cluster around their own TX (1-5m).
+        # Needed so secondary's own SINR can reach the same MCS table primary uses --
+        # a spread-out secondary is always interference-limited to below MCS tier 0.
+        position_secondary_receiver = []
+        direct_h_secondary = []
+        for i in range(M):
+            dist_r = random.uniform(1, 5)
+            angle = random.uniform(0, 2 * math.pi)
+            rs = [secondary_transmitter[0] + dist_r * math.cos(angle),
+                  secondary_transmitter[1] + dist_r * math.sin(angle)]
+            position_secondary_receiver.append(rs)
+            d = np.sqrt((rs[0]-secondary_transmitter[0])**2 + (rs[1]-secondary_transmitter[1])**2)
+            h = (wave / (4 * np.pi * d))**2
+            direct_h_secondary.append(int(round(h * scale_factor, 2)))
 
-        # ------------------------------------------------------------------
-        # 1. Geometry
-        # ------------------------------------------------------------------
-        # Primary receivers: 8 – 35 m
-        pos_p, direct_h_p = [], []
-        for _ in range(N):
-            d = random.uniform(8.0, 35.0)
-            ang = random.uniform(0, 2 * math.pi)
-            x = primary_transmitter[0] + d * math.cos(ang)
-            y = primary_transmitter[1] + d * math.sin(ang)
-            pos_p.append([x, y])
-            dist = math.hypot(x - primary_transmitter[0],
-                              y - primary_transmitter[1])
-            h = (wave / (4 * math.pi * dist)) ** 2
-            direct_h_p.append(max(1, int(round(h * scale_factor))))
+        cross_h_primary = []
+        for pos in position_primary_receiver:
+            d = np.sqrt((pos[0]-secondary_transmitter[0])**2 + (pos[1]-secondary_transmitter[1])**2)
+            h = (wave / (4 * np.pi * d))**2
+            cross_h_primary.append(int(round(h * scale_factor, 2)))
 
-        # Secondary receivers: 2 – 10 m (still reasonably close)
-        pos_s, direct_h_s = [], []
-        for _ in range(M):
-            d = random.uniform(2.0, 10.0)
-            ang = random.uniform(0, 2 * math.pi)
-            x = secondary_transmitter[0] + d * math.cos(ang)
-            y = secondary_transmitter[1] + d * math.sin(ang)
-            pos_s.append([x, y])
-            dist = math.hypot(x - secondary_transmitter[0],
-                              y - secondary_transmitter[1])
-            h = (wave / (4 * math.pi * dist)) ** 2
-            direct_h_s.append(max(1, int(round(h * scale_factor))))
+        cross_h_secondary = []
+        for pos in position_secondary_receiver:
+            d = np.sqrt((pos[0]-primary_transmitter[0])**2 + (pos[1]-primary_transmitter[1])**2)
+            h = (wave / (4 * np.pi * d))**2
+            cross_h_secondary.append(int(round(h * scale_factor, 2)))
 
-        # Cross channels
-        cross_h_p = []
-        for pos in pos_p:
-            dist = math.hypot(pos[0] - secondary_transmitter[0],
-                              pos[1] - secondary_transmitter[1])
-            h = (wave / (4 * math.pi * dist)) ** 2
-            cross_h_p.append(max(1, int(round(h * scale_factor))))
-
-        cross_h_s = []
-        for pos in pos_s:
-            dist = math.hypot(pos[0] - primary_transmitter[0],
-                              pos[1] - primary_transmitter[1])
-            h = (wave / (4 * math.pi * dist)) ** 2
-            cross_h_s.append(max(1, int(round(h * scale_factor))))
-
-        # ------------------------------------------------------------------
-        # 2. Primary power (knapsack)
-        # ------------------------------------------------------------------
-        max_cross_s = max(cross_h_s) if cross_h_s else 1
-        allowed_p1 = max(N * 30, int(SECONDARY_I_MAX / max_cross_s))   # guarantee decent budget
-
-        P1 = allocate_power_knapsack(allowed_p1, direct_h_p)
-
-        # Soft baseline check: at least N-1 primary receivers must clear the first MCS
-        good_primary = 0
-        for j in range(N):
-            sinr = max(P1[j] * direct_h_p[j], 1e-12)
-            if get_mcs_threshold(10 * math.log10(sinr)) >= 0:
-                good_primary += 1
-        if good_primary < N - 1:
+        # P1_dist = []
+        # for j in range(N):
+        #     target_tier = random.randint(1, 4)  # mid-range, avoids both extremes
+        #     low_db = MCS[target_tier][0]
+        #     high_db = MCS[target_tier + 1][0] if target_tier < len(MCS) - 1 else low_db + 3.0
+        #     target_db = random.uniform(low_db + 0.2, high_db - 0.2)
+        #     target_lin = 10 ** (target_db / 10.0)
+        #     P1_dist.append(max(1, int(round(target_lin / direct_h_primary[j]))))
+        
+        allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
+        if allowed_p1 < N:
             continue
 
-        # ------------------------------------------------------------------
-        # 3. Interference margin for secondary (hard protection of current MCS)
-        # ------------------------------------------------------------------
+        inverses = [1.0 / v for v in direct_h_primary]
+        sum_inverses = sum(inverses)
+        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
+        # P1_dist = allocate_p1_knapsack_optimal(allowed_p1, direct_h_primary)
+
+        for p,h in zip(P1_dist, direct_h_primary):
+          print(get_mcs_threshold(10*math.log10(p*h)))
+        
+        # Reject the sample if ANY primary receiver fails to clear the lowest MCS
+        # tier at baseline (P2=0) -- this is what "best P1" actually means: don't
+        # silently skip weak receivers later, guarantee all of them qualify up front.
+        baseline_ok = True
+        for j in range(N):
+            signal = P1_dist[j] * direct_h_primary[j]
+            if signal <= 0 or get_mcs_threshold(10 * math.log10(signal)) < 0:
+                baseline_ok = False
+                break
+        if not baseline_ok:
+            continue
+
+
         p2_limits = []
         for j in range(N):
-            signal = P1[j] * direct_h_p[j]
-            if signal <= 0:
-                p2_limits.append(0.0)
-                continue
-            baseline_db = 10 * math.log10(signal)
-            target_th = get_mcs_threshold(baseline_db)
-            if target_th < 0:
-                # This receiver is already weak – give it almost no extra interference
-                p2_limits.append(5.0)
-                continue
-            min_sinr_lin = 10 ** (target_th / 10.0)
-            max_interf = (signal / min_sinr_lin) - 1.0
-            if max_interf > 0 and cross_h_p[j] > 0:
-                p2_limits.append(max_interf / cross_h_p[j])
-            else:
-                p2_limits.append(0.0)
+            signal = P1_dist[j] * direct_h_primary[j]
+            baseline_sinr_db = 10 * math.log10(signal)
+            target_th = get_mcs_threshold(baseline_sinr_db)  # guaranteed >= 0 now
+            min_linear_sinr = 10 ** (target_th / 10.0)
+            max_interference = (signal / min_linear_sinr) - 1.0
+            if max_interference > 0 and cross_h_primary[j] > 0:
+                p2_limits.append(max_interference / cross_h_primary[j])
 
-        allowed_p2 = int(math.floor(min(p2_limits))) if p2_limits else 0
+        if not p2_limits:
+            continue
 
-        # Guarantee a usable secondary budget
-        allowed_p2 = max(allowed_p2, M * 8)
+        allowed_p2 = int(math.floor(min(p2_limits)))
+        if allowed_p2 < M:
+            continue
 
-        # ------------------------------------------------------------------
-        # 4. Secondary power (knapsack under the margin)
-        # ------------------------------------------------------------------
-        total_p1 = sum(P1)
-        interf_s = [1.0 + total_p1 * c for c in cross_h_s]
+        # p2_limits = []
+        # for j in range(N):
+        #     signal = P1_dist[j] * direct_h_primary[j]
+        #     baseline_sinr_db = 10 * math.log10(signal)
+        #     target_th = get_mcs_threshold(baseline_sinr_db)
+        #     min_linear_sinr = 10 ** (target_th / 10.0)
+        #     max_interference = (signal / min_linear_sinr) - 1.0
 
-        P2 = allocate_power_knapsack(allowed_p2, direct_h_s, interf_s)
+        #     # FIX: If max_interference <= 0, this receiver can tolerate 0 interference.
+        #     if max_interference <= 0:
+        #         p2_limits.append(0.0)
+        #     elif cross_h_primary[j] > 0:
+        #         p2_limits.append(max_interference / cross_h_primary[j])
 
-        # Final clip (should almost never trigger)
-        if sum(P2) > allowed_p2:
-            scale = allowed_p2 / max(sum(P2), 1)
-            P2 = [max(0, int(round(p * scale))) for p in P2]
+        # if not p2_limits:
+        #     continue
 
-        # ------------------------------------------------------------------
-        # 5. Accept the sample
-        # ------------------------------------------------------------------
-        data.append([
-            direct_h_p,
-            direct_h_s,
-            cross_h_p,
-            cross_h_s,
-            P1,
-            P2
-        ])
+        # allowed_p2 = int(math.floor(min(p2_limits)))
+        # # This will cause invalid channel states (where allowed_p2 < M) to be properly rejected
+        # if allowed_p2 < M:
+        #     continue
 
-    print(f"[gen_channels] Generated {len(data)} / {length} samples "
-          f"after {attempts} attempts.")
+        inverses = [1.0 / v for v in direct_h_secondary]
+        sum_inverses = sum(inverses)
+        # floor (not round) guarantees sum(P2_dist) <= allowed_p2
+        # P2_dist = [int(math.floor((inv / sum_inverses) * allowed_p2)) for inv in inverses]
+        P2_dist =allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
+
+        data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
+
     return data
 
 import os
@@ -722,7 +653,7 @@ def build_prompt(train):
 
 data = gen_channels(190)
 train = data[:90]
-test = data[90:]
+test = data[90:110]
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 prompt_secondary_allocation = build_prompt(train)
 
