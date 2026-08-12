@@ -480,11 +480,11 @@ def primary(state: GraphState) -> GraphState:
     
     Follow these exact decision bands:
     1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
-    2. -3.0 dB <= Margin < -0.5 dB: action=DECREASE, severity=MEDIUM.
-    3. -0.5 dB <= Margin < 0.0 dB: decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 dB <= Margin <= 2.0 dB: decision=ACCEPT.
-    5. 2.0 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
-    6. Margin > 5.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
+    2. -3.0 dB <= Margin < -1.0 dB: action=DECREASE, severity=MEDIUM.
+    3. -1.0 dB <= Margin < 0.0 dB: decision=REJECT, action=DECREASE, severity=LOW.
+    4. 0.0 dB <= Margin <= 4.0 dB: decision=ACCEPT.
+    5. 4.0 dB < Margin <= 7.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
+    6. Margin > 7.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
     Your critique must explicitly mention the amount of the worst margin.
 
@@ -556,21 +556,21 @@ def secondary(state:GraphState) -> GraphState:
         prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
         Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
         
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB.
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 4.0 dB.
         
         You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
         
         [DECREASE ACTIONS - Margin < 0.0 dB]
         Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
-        - Worst Case Anchor (Margin <= -10.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
+        - Worst Case Anchor (Margin <= -4.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
         - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
-        - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
+        - In Between: Evaluate where the current margin falls between -0.1 dB and -4.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
         
-        [INCREASE ACTIONS - Margin > 2.0 dB]
+        [INCREASE ACTIONS - Margin > 4.0 dB]
         Allowed Steps: [+1, +2, +3, +5, +10, +15]
-        - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +15.
-        - Least Case Anchor (Margin = +2.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
-        - In Between: Evaluate where the current margin falls between +2.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +10, +15). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
+        - Worst Case Anchor (Margin >= +7.0 dB): The primary has massive excess margin. Choose the biggest step: +15.
+        - Least Case Anchor (Margin = +4.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
+        - In Between: Evaluate where the current margin falls between +4.1 dB and +7.0 dB. If it leans toward massive excess, pick a larger step (e.g., +10, +15). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
 
         CRITICAL RULES:
         1. You must ONLY select a step value from the Allowed Steps lists provided above.
