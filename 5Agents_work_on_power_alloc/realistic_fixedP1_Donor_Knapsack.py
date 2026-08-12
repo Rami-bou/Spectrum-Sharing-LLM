@@ -288,7 +288,6 @@ def primary(state: GraphState) -> GraphState:
     The primary transmitter evaluates the secondary's proposed power allocation (P2) and provides feedback based on
     the worst-case MCS margin across all primary receivers.
     """
-    print(f"PROMPT: {state['P2']}")
     total_p2 = sum(state['P2'])
     margins = []
 
