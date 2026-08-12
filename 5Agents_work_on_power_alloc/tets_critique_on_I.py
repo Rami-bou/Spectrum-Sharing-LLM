@@ -486,7 +486,7 @@ plt.ylabel('Sum Spectral Efficiency (bps/Hz)', fontsize=12)
 plt.legend(fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig("Result_MCS.png")
+plt.savefig("OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.png")
 
 pred_p2_sum = [sum(p) for p in all_pred_P2]
 true_p2_sum = [sum(p) for p in all_true_P2]
@@ -499,6 +499,6 @@ plt.xlabel('Test Sample Index')
 plt.ylabel('Total Allocated P2 Power (Watts)')
 plt.legend()
 plt.grid(True, linestyle=':', alpha=0.7)
-plt.savefig("Result_P2_Power.png")
+plt.savefig("PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPpower.png")
 
 plt.show()
