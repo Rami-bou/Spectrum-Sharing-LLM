@@ -163,6 +163,124 @@ def calculate_secondary_discrete_rate(P1_vector, P2_vector, direct_h_secondary, 
 
     return total_throughput_mbps
 
+def allocate_p1_knapsack_optimal(budget, direct_h_primary):
+    """
+    Distributes allowed_p1 among primary receivers to maximize aggregate 
+    discrete throughput using greedy Knapsack selection.
+    """
+    N = len(direct_h_primary)
+    P1_dist = [0] * N
+    budget_left = budget
+
+    while budget_left > 0:
+        best_eff = -1.0
+        best_user = -1
+        best_cost = 0
+
+        for i in range(N):
+            # Calculate current SINR in dB (Noise = 1.0, P2=0 at this stage)
+            sinr_lin = (P1_dist[i] * direct_h_primary[i]) 
+            sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
+
+            # Find current rate and next MCS threshold
+            curr_rate = 0
+            next_th = None
+            next_rate = 0
+
+            for th, rate in MCS:
+                if sinr_db >= th:
+                    curr_rate = rate
+                elif next_th is None:
+                    next_th = th
+                    next_rate = rate
+                    break
+
+            # Evaluate upgrade cost and efficiency
+            if next_th is not None:
+                target_sinr_lin = 10 ** (next_th / 10.0)
+                required_p1 = target_sinr_lin / direct_h_primary[i]
+                cost = int(math.ceil(required_p1 - P1_dist[i]))
+
+                if 0 < cost <= budget_left:
+                    value = next_rate - curr_rate
+                    eff = value / float(cost)
+
+                    if eff > best_eff:
+                        best_eff = eff
+                        best_user = i
+                        best_cost = cost
+
+        # Apply the best upgrade
+        if best_user != -1:
+            P1_dist[best_user] += best_cost
+            budget_left -= best_cost
+        else:
+            # Dump leftover budget into the receiver with the strongest direct channel
+            best_user = max(range(N), key=lambda k: direct_h_primary[k])
+            P1_dist[best_user] += budget_left
+            budget_left = 0
+
+    return P1_dist
+
+def allocate_p1_knapsack_optimal(budget, direct_h_primary):
+    """
+    Distributes allowed_p1 among primary receivers to maximize aggregate 
+    discrete throughput using greedy Knapsack selection.
+    """
+    N = len(direct_h_primary)
+    P1_dist = [0] * N
+    budget_left = budget
+
+    while budget_left > 0:
+        best_eff = -1.0
+        best_user = -1
+        best_cost = 0
+
+        for i in range(N):
+            # Calculate current SINR in dB (Noise = 1.0, P2=0 at this stage)
+            sinr_lin = (P1_dist[i] * direct_h_primary[i]) 
+            sinr_db = 10 * math.log10(sinr_lin) if sinr_lin > 0 else -999.0
+
+            # Find current rate and next MCS threshold
+            curr_rate = 0
+            next_th = None
+            next_rate = 0
+
+            for th, rate in MCS:
+                if sinr_db >= th:
+                    curr_rate = rate
+                elif next_th is None:
+                    next_th = th
+                    next_rate = rate
+                    break
+
+            # Evaluate upgrade cost and efficiency
+            if next_th is not None:
+                target_sinr_lin = 10 ** (next_th / 10.0)
+                required_p1 = target_sinr_lin / direct_h_primary[i]
+                cost = int(math.ceil(required_p1 - P1_dist[i]))
+
+                if 0 < cost <= budget_left:
+                    value = next_rate - curr_rate
+                    eff = value / float(cost)
+
+                    if eff > best_eff:
+                        best_eff = eff
+                        best_user = i
+                        best_cost = cost
+
+        # Apply the best upgrade
+        if best_user != -1:
+            P1_dist[best_user] += best_cost
+            budget_left -= best_cost
+        else:
+            # Dump leftover budget into the receiver with the strongest direct channel
+            best_user = max(range(N), key=lambda k: direct_h_primary[k])
+            P1_dist[best_user] += budget_left
+            budget_left = 0
+
+    return P1_dist
+
 def gen_channels(length):
     while len(data) < length:
         # Primary receivers: bounded cell around their own TX (10-35m),
@@ -206,14 +324,27 @@ def gen_channels(length):
             h = (wave / (4 * np.pi * d))**2
             cross_h_secondary.append(int(round(h * scale_factor, 2)))
 
+        # P1_dist = []
+        # for j in range(N):
+        #     target_tier = random.randint(1, 4)  # mid-range, avoids both extremes
+        #     low_db = MCS[target_tier][0]
+        #     high_db = MCS[target_tier + 1][0] if target_tier < len(MCS) - 1 else low_db + 3.0
+        #     target_db = random.uniform(low_db + 0.2, high_db - 0.2)
+        #     target_lin = 10 ** (target_db / 10.0)
+        #     P1_dist.append(max(1, int(round(target_lin / direct_h_primary[j]))))
+        
         allowed_p1 = int(round(secondary_I_max / max(cross_h_secondary)))
         if allowed_p1 < N:
             continue
 
         inverses = [1.0 / v for v in direct_h_primary]
         sum_inverses = sum(inverses)
-        P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
+        # P1_dist = [int(round((inv / sum_inverses) * allowed_p1)) for inv in inverses]
+        P1_dist = allocate_p1_knapsack_optimal(allowed_p1, direct_h_primary)
 
+        for p,h in zip(P1_dist, direct_h_primary):
+          print(get_mcs_threshold(10*math.log10(p*h)))
+        
         # Reject the sample if ANY primary receiver fails to clear the lowest MCS
         # tier at baseline (P2=0) -- this is what "best P1" actually means: don't
         # silently skip weak receivers later, guarantee all of them qualify up front.
@@ -288,6 +419,7 @@ def primary(state: GraphState) -> GraphState:
     The primary transmitter evaluates the secondary's proposed power allocation (P2) and provides feedback based on
     the worst-case MCS margin across all primary receivers.
     """
+    print(f"PROMPT: {state['P2']}")
     total_p2 = sum(state['P2'])
     margins = []
 
@@ -319,16 +451,16 @@ def primary(state: GraphState) -> GraphState:
     print(f"\n[Primary Evaluator] Worst MCS Margin: {worst_margin:.2f} dB")
 
     prompt_primary = f"""You are the Central Network Evaluator protecting Primary users' discrete data rates.
-    You evaluate the 'Worst MCS Margin' (measured in dB).
+    You evaluate the 'Worst MCS Margin' (measured in dB). 
     - A positive Margin means secondary interference is safely absorbed within the MCS step (no data loss).
     - A negative Margin means secondary interference pushed a primary user off their MCS cliff, causing rate loss.
-
+    
     Follow these exact decision bands:
     1. Margin < -3.0 dB: EMERGENCY, severe rate loss. decision=REJECT, action=DECREASE, severity=HIGH.
     2. -3.0 dB <= Margin < -0.5 dB: action=DECREASE, severity=MEDIUM.
     3. -0.5 dB <= Margin < 0.0 dB: decision=REJECT, action=DECREASE, severity=LOW.
-    4. 0.0 dB <= Margin <= 2.0 dB: decision=ACCEPT. (Target Sweet Spot)
-    5. 2.0 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
+    4. 0.0 dB <= Margin <= 0.5 dB: decision=ACCEPT.
+    5. 0.5 dB < Margin <= 5.0 dB: decision=REJECT, action=INCREASE, severity=LOW.
     6. Margin > 5.0 dB: Far below capacity, secondary is being overly conservative. decision=REJECT, action=INCREASE, severity=HIGH.
 
     Your critique must explicitly mention the amount of the worst margin.
@@ -370,12 +502,12 @@ def primary(state: GraphState) -> GraphState:
 class SecondaryOutput(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     allocation_secondary: List[int] = Field(description="Your allocation for all of your secondary receivers.")
-    message: str = Field(description="You send a message to the primary user, explaining your allocation and how it will not violate their discrete MCS data rate.")
+    message: str = Field(description="A brief status note explaining your allocation rationale, intended for the Primary operator's awareness.")
 
 class SecondaryRemainRounds(BaseModel):
     reasoning: str = Field(description="You provide a brief reasoning before making any decision, expalaining why you will do this.")
     step: int = Field(description="The step to add/substract you think that i will hit the best P2.")
-    message: str = Field(description="You send a message to the primary user, explaining your allocation and how it will not violate their discrete MCS data rate.")
+    message: str = Field(description="A brief status note explaining your allocation rationale, intended for the Primary operator's awareness.")
 
 def secondary(state:GraphState) -> GraphState:
     """The Secondary Network Optimizer, operating alongside a Primary Network,
@@ -400,18 +532,22 @@ def secondary(state:GraphState) -> GraphState:
     else:
         prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
         Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
-
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The target sweet spot is a margin between 0.0 dB and 2.0 dB.
-
-        [STRICT PENALTY RULES & ASYMMETRIC ACTIONS]:
-        - If the Primary Evaluator reports a PENALTY WARNING or Margin < 0.0 dB: You have violated the primary network constraint!
-          You MUST select a LARGE NEGATIVE step to IMMEDIATELY clear the interference.
-          Allowed DECREASE Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
-          * For severe violations (Margin < -3.0 dB), pick large drops: [-30, -25, -20].
-
-        - If Margin > 2.0 dB (INCREASE needed): You are below primary capacity, but you MUST increase CONSERVATIVELY to avoid overshooting into a violation.
-          Allowed INCREASE Steps (RESTRICTED FOR SAFETY): [+1, +2, +3, +5, +10]
-          * Do NOT take huge jumps above +10. Rapid increases cause catastrophic primary rate drops.
+        
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 1.0 dB.
+        
+        You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
+        
+        [DECREASE ACTIONS - Margin < 0.0 dB]
+        Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
+        - Worst Case Anchor (Margin <= -10.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
+        - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
+        - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
+        
+        [INCREASE ACTIONS - Margin > 1.0 dB]
+        Allowed Steps: [+1, +2, +3, +5, +10, +15]
+        - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +15.
+        - Least Case Anchor (Margin = +1.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
+        - In Between: Evaluate where the current margin falls between +1.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +10, +15). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
 
         CRITICAL RULES:
         1. You must ONLY select a step value from the Allowed Steps lists provided above.
@@ -433,9 +569,9 @@ def secondary(state:GraphState) -> GraphState:
             )
         ])
 
-        state['secondary_critique'] = resp.message
         total_p2 = sum(state['P2'])
         state['delta_hist'].append(resp.step)
+        state['secondary_critique'] = resp.message
         print(f"Delta: {resp.step}")
 
         P2_new = int(max(1, total_p2 + resp.step))
@@ -452,7 +588,7 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
     if state["iteration"] > 3:
         return "finalize"
-    # early stop
+    # earsly stop
     if state['primary_decision'] == "ACCEPT":
         return "finalize"
 
@@ -494,15 +630,15 @@ def build_prompt(train):
 
 data = gen_channels(190)
 train = data[:90]
-test = data[90:]
+test = data[90:100]
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 prompt_secondary_allocation = build_prompt(train)
 
 RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-def save_file(f):
-    with open(metrics_path, "w") as f:
+def save_file(path):
+    with open(path, "w") as f:
         f.write("=" * 60 + "\n")
         f.write("BASELINE PERFORMANCE\n")
         f.write("=" * 60 + "\n\n")
