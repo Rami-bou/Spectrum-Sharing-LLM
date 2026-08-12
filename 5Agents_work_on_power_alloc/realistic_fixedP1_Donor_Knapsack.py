@@ -588,7 +588,7 @@ def finalizer(state: GraphState) -> Literal["revise", "finalize"]:
     print("Finalizer...\n")
     if state["iteration"] > 3:
         return "finalize"
-    # earsly stop
+    # early stop
     if state['primary_decision'] == "ACCEPT":
         return "finalize"
 
