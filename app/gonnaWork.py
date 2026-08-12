@@ -739,8 +739,8 @@ for i in range(len(test)):
     }
     m1 = []
     m2 = []
-    for _ in range(len(test[i][0])):
-        signal = true_p1 * direct_h_prim    
+    for j in range(len(test[i][0])):
+        signal = true_p1[j] * direct_h_prim    
         baseline_sinr_db = 10 * math.log10(signal)
 
         target_th = get_mcs_threshold(baseline_sinr_db)
