@@ -4,7 +4,7 @@ from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from graph import app
-from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test
+from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test, calculate_primary_discrete_rate
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
