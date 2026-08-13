@@ -495,9 +495,9 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
-data = gen_channels(190)
+data = gen_channels(200)
 train = data[:100]
-test = data[100:150]
+test = data[100:]
 
 prompt_secondary_allocation = build_prompt(train)
 
