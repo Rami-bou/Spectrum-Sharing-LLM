@@ -31,7 +31,7 @@ def save_file(metrics_path):
 
         f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
 
-        f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
+        #f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
 
         success_rate = 100 * np.mean(success_list)
 
@@ -43,6 +43,7 @@ se_true_list = []
 interf_pred_list = []
 interf_true_list = []
 
+rounds_list = []
 success_list = []
 violation_list = []
 se_pred_list_primary = []
