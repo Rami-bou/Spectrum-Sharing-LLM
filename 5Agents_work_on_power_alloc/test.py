@@ -678,7 +678,7 @@ def build_prompt(train):
 
 
 data = gen_channels(200)
-train = data[100]
+train = data[100:]
 test = data[100:]
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 prompt_secondary_allocation = build_prompt(train)
