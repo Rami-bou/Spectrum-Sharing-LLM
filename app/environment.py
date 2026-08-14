@@ -583,7 +583,7 @@ def gen_channels(length):
 
         if not p2_limits:
             continue
-
+        # 
         allowed_p2 = int(math.floor(min(p2_limits)))
         if allowed_p2 < M:
             continue
