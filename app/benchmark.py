@@ -53,16 +53,9 @@ csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
 csv_file = open(csv_path, "w", newline="")
 csv_writer = csv.writer(csv_file)
 csv_writer.writerow([
-    "Sample",
-    "TrueRate",
-    "PredRate",
-    "TrueInterference",
-    "PredInterference",
-    "Violation",
-    "Rounds",
-    "Decision",
-    "TrueP2",
-    "PredP2"
+    "Sample", "TrueRate", "PredRate",
+    "TruePrimaryRate", "PredPrimaryRate",
+    "TrueInterference", "PredInterference", "Violation", "Rounds", "Decision", "TrueP2", "PredP2"
 ])
 
 print(f"\nStarting Benchmark over {len(test)} Test Samples...")
@@ -115,16 +108,10 @@ for i in range(len(test)):
     violation_list.append(1 if max_interf_pred > primary_I_max else 0)
 
     csv_writer.writerow([
-        i + 1,
-        rate_true,
-        rate_pred,
-        max_interf_true,
-        max_interf_pred,
-        violation_list[i],
-        result["iteration"],
-        result["primary_decision"],
-        sum(true_p2),
-        sum(pred_p2) # str(true_p2)
+        i + 1, rate_true, rate_pred,
+        rate_true_primary, rate_pred_primary,
+        max_interf_true, max_interf_pred, violation_list[i],
+        result["iteration"], result["primary_decision"], sum(true_p2), sum(pred_p2)
     ])
 
     print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
