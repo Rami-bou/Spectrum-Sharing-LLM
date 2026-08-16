@@ -575,7 +575,8 @@ def gen_channels(length):
         for j in range(N):
             signal = P1_dist[j] * direct_h_primary[j]
             baseline_sinr_db = 10 * math.log10(signal)
-            target_th = get_mcs_threshold(baseline_sinr_db)  # guaranteed >= 0 now
+            target_th = get_mcs_threshold(baseline_sinr_db)
+            # the minimum SINR linear that still achieves the same MCS tier as baseline (P2=0)
             min_linear_sinr = 10 ** (target_th / 10.0)
             max_interference = (signal / min_linear_sinr) - 1.0
             if max_interference > 0 and cross_h_primary[j] > 0:
