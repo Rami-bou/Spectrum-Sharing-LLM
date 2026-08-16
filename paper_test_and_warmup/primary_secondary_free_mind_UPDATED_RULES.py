@@ -271,7 +271,7 @@ data.clear()
 repeated.clear()
 ch = gen_channels(1000)
 print(ch)
-ch = ch[200:201]
+ch = ch[200:300]
 
 print("\n--- Starting LLM Negotiation ---")
 
