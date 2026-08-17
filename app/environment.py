@@ -331,7 +331,7 @@ primary_I_max = 1000
 
 
 primary_transmitter = [80, 80]
-secondary_transmitter = [70, 70]
+secondary_transmitter = [20, 20]
 
 
 def get_mcs_threshold(sinr_db):
