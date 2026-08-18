@@ -38,7 +38,7 @@ def save_file(metrics_path):
 
         f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
-POISON_FACTOR = 0.3
+POISON_FACTOR = 0.1
 
 def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Same computation primary() uses internally -- reimplemented here so we
@@ -110,7 +110,7 @@ for i in range(len(test)):
     pred_p2 = result['P2']
 
     margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
-    margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
+    margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim) 
 
     # 1. Calculate Discrete Secondary Rates
     rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
