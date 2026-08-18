@@ -3,8 +3,9 @@ import csv
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 from graph import app
-from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test, calculate_primary_discrete_rate
+from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test, calculate_primary_discrete_rate, get_mcs_threshold
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -37,6 +38,27 @@ def save_file(metrics_path):
 
         f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
+POISON_FACTOR = 0.3
+
+def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+    """Same computation primary() uses internally -- reimplemented here so we
+    can score the TRUE outcome, independent of what Primary was shown."""
+    total_p2 = sum(P2_vector)
+    margins = []
+    for j in range(len(P1_vector)):
+        signal = P1_vector[j] * direct_h_primary[j]
+        if signal <= 0:
+            continue
+        baseline_sinr_db = 10 * math.log10(signal)
+        target_th = get_mcs_threshold(baseline_sinr_db)
+        if target_th < 0:
+            continue
+        interference = total_p2 * cross_h_primary[j]
+        actual_sinr_linear = signal / (1.0 + interference)
+        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
+        margins.append(actual_sinr_db - target_th)
+    return min(margins) if margins else -999.0
+
 se_pred_list = []
 se_true_list = []
 
@@ -67,12 +89,13 @@ for i in range(len(test)):
     cross_h_prim = test[i][2]
     true_p1 = test[i][4]
     true_p2 = test[i][5]
-    cross_h_prim = test[i][2]
+
+    poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
 
     initial_state = {
         "direct_primary_channels": test[i][0],
         "direct_secondary_channels": test[i][1],
-        "cross_primary_channels": test[i][2],
+        "cross_primary_channels": poisoned_cross_h_pri,
         "cross_secondary_channels": test[i][3],
         "P1": test[i][4],
         "P2": [0] * M,
@@ -85,6 +108,9 @@ for i in range(len(test)):
 
     result = app.invoke(initial_state)
     pred_p2 = result['P2']
+
+    margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
+    margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
 
     # 1. Calculate Discrete Secondary Rates
     rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
