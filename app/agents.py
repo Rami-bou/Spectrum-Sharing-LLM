@@ -183,36 +183,10 @@ def secondary(state:GraphState) -> GraphState:
 
 
     else:
-        prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
-        Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
-        
-        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB.
-        
-        You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
-        
-        [DECREASE ACTIONS - Margin < 0.0 dB]
-        Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
-        - Worst Case Anchor (Margin <= -10.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
-        - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
-        - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
-        
-        [INCREASE ACTIONS - Margin > 2.0 dB]
-        Allowed Steps: [+1, +2, +3, +5, +10, +15]
-        - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +15.
-        - Least Case Anchor (Margin = +2.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
-        - In Between: Evaluate where the current margin falls between +2.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +10, +15). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
-
-        CRITICAL RULES:
-        1. You must ONLY select a step value from the Allowed Steps lists provided above.
-        2. Always output a NEGATIVE integer if the action is DECREASE. Always output a POSITIVE integer if the action is INCREASE.
-        3. Oscillation Check: Look at your `delta_hist`. If your last step caused the margin to flip polarity (e.g., from positive to negative), you jumped too far. You MUST reverse direction and pick a step from the list that is strictly smaller in magnitude than your previous step.
-
-        Return JSON matching the schema.
-        """
         # prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
         # Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
         
-        # The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 1.0 dB.
+        # The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB.
         
         # You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
         
@@ -222,11 +196,11 @@ def secondary(state:GraphState) -> GraphState:
         # - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
         # - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
         
-        # [INCREASE ACTIONS - Margin > 1.0 dB]
-        # Allowed Steps: [+1, +2, +3, +5, +10, +15, +20, +25, +30]
-        # - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +30.
-        # - Least Case Anchor (Margin = +1.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
-        # - In Between: Evaluate where the current margin falls between +1.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +15, +20). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
+        # [INCREASE ACTIONS - Margin > 2.0 dB]
+        # Allowed Steps: [+1, +2, +3, +5, +10, +15]
+        # - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +15.
+        # - Least Case Anchor (Margin = +2.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
+        # - In Between: Evaluate where the current margin falls between +2.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +10, +15). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
 
         # CRITICAL RULES:
         # 1. You must ONLY select a step value from the Allowed Steps lists provided above.
@@ -235,6 +209,32 @@ def secondary(state:GraphState) -> GraphState:
 
         # Return JSON matching the schema.
         # """
+        prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
+        Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
+        
+        The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 1.0 dB.
+        
+        You must select an integer `step` to adjust your total P2 budget strictly from the allowed lists below. 
+        
+        [DECREASE ACTIONS - Margin < 0.0 dB]
+        Allowed Steps: [-30, -25, -20, -15, -10, -5, -3, -2, -1]
+        - Worst Case Anchor (Margin <= -10.0 dB): You completely jammed the Primary. Choose the biggest step: -30.
+        - Least Case Anchor (Margin = -0.1 dB): You barely crossed the threshold. Choose the smallest step: -1.
+        - In Between: Evaluate where the current margin falls between -0.1 dB and -10.0 dB. If it leans closer to the worst case, pick a correspondingly larger step (e.g., -20, -25). If it leans closer to the least case, pick a smaller step (e.g., -3, -5).
+        
+        [INCREASE ACTIONS - Margin > 1.0 dB]
+        Allowed Steps: [+1, +2, +3, +5, +10, +15, +20, +25, +30]
+        - Worst Case Anchor (Margin >= +10.0 dB): The primary has massive excess margin. Choose the biggest step: +30.
+        - Least Case Anchor (Margin = +1.1 dB): You are just barely above the sweet spot. Choose the smallest step: +1.
+        - In Between: Evaluate where the current margin falls between +1.1 dB and +10.0 dB. If it leans toward massive excess, pick a larger step (e.g., +15, +20). If it is close to the sweet spot, pick a smaller step (e.g., +3, +5).
+
+        CRITICAL RULES:
+        1. You must ONLY select a step value from the Allowed Steps lists provided above.
+        2. Always output a NEGATIVE integer if the action is DECREASE. Always output a POSITIVE integer if the action is INCREASE.
+        3. Oscillation Check: Look at your `delta_hist`. If your last step caused the margin to flip polarity (e.g., from positive to negative), you jumped too far. You MUST reverse direction and pick a step from the list that is strictly smaller in magnitude than your previous step.
+
+        Return JSON matching the schema.
+        """
         # prompt = f"""You are the Secondary Network Optimizer operating alongside a Primary Network.
         # Your goal is to adjust the total Secondary Power (P2) budget based on the Primary Evaluator's critique.
         # The Primary Evaluator monitors the 'Worst MCS Margin' (in dB). The sweet spot is a margin exactly between 0.0 dB and 2.0 dB.
