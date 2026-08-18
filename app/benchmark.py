@@ -38,7 +38,7 @@ def save_file(metrics_path):
 
         f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
-POISON_FACTOR = 2.0
+POISON_FACTOR = 0.1
 
 def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
     """Same computation primary() uses internally -- reimplemented here so we
