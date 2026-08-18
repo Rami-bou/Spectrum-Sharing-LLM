@@ -59,7 +59,7 @@ def primary(state: GraphState) -> GraphState:
     the worst-case MCS margin across all primary receivers.
     """
     total_p2 = sum(state['P2'])
-    print(f"\n[Primary Evaluator] Total Secondary Power (P2): {total_p2}")
+    print(f"\n[Primary Evaluator] Total Primary Power (P1): {sum(state['P1'])}")
     margins = []
     
     # 1. Calculate the MCS margin for every primary receiver
