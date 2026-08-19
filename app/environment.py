@@ -327,7 +327,7 @@ wave = c / f
 scale_factor = 1e8
 
 secondary_I_max = 3000
-primary_I_max = 1000
+primary_I_max = 300
 
 
 primary_transmitter = [80, 80]
