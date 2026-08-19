@@ -118,13 +118,13 @@ for i in range(len(test)):
     se_pred_list.append(rate_pred)
     se_true_list.append(rate_true)
 
-    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
+    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
     rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
     se_pred_list_primary.append(rate_pred_primary)
     se_true_list_primary.append(rate_true_primary)
 
     # 2. Calculate Worst-Case Caused Interference on Primary Receivers
-    max_interf_pred = sum(pred_p2) * max(cross_h_prim)
+    max_interf_pred = sum(pred_p2) * max(poisoned_cross_h_pri)
     max_interf_true = sum(true_p2) * max(cross_h_prim)
     interf_pred_list.append(max_interf_pred)
     interf_true_list.append(max_interf_true)
