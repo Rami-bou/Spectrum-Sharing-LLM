@@ -95,12 +95,12 @@ for i in range(len(test)):
     true_p1 = test[i][4]
     true_p2 = test[i][5]
 
-    # poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
+    poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
 
     initial_state = {
     "direct_primary_channels": test[i][0],
     "direct_secondary_channels": test[i][1],
-    "cross_primary_channels": cross_h_prim,
+    "cross_primary_channels": poisoned_cross_h_pri,
     "cross_secondary_channels": test[i][3],
     "P1": test[i][4],
     "P2": [0] * M,
@@ -198,7 +198,7 @@ if len(test) > 0:
     plt.savefig(
     os.path.join(
     RESULT_DIR,
-    "secondary_rate_normal.png"
+    "secondary_rate_csi_pois.png"
     ),
     dpi=300,
     bbox_inches="tight"
@@ -217,7 +217,7 @@ if len(test) > 0:
     plt.savefig(
     os.path.join(
     RESULT_DIR,
-    "primary_rate_normal.png"
+    "primary_rate_csi_pois.png"
     ),
     dpi=300,
     bbox_inches="tight"
@@ -237,7 +237,7 @@ if len(test) > 0:
     plt.savefig(
     os.path.join(
     RESULT_DIR,
-    "primary_interference_normal.png"
+    "primary_interference_csi_pois.png"
     ),
     dpi=300,
     bbox_inches="tight"
