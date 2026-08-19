@@ -38,64 +38,70 @@ def save_file(metrics_path):
 
         f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
+import os
+import csv
+import math
+import numpy as np
+import matplotlib.pyplot as plt
+
+# --- PRE-SETUP ---
 POISON_FACTOR = 0.1
 
 def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
-    """Same computation primary() uses internally -- reimplemented here so we
-    can score the TRUE outcome, independent of what Primary was shown."""
     total_p2 = sum(P2_vector)
     margins = []
     for j in range(len(P1_vector)):
         signal = P1_vector[j] * direct_h_primary[j]
-        if signal <= 0:
-            continue
+        if signal <= 0: continue
         baseline_sinr_db = 10 * math.log10(signal)
         target_th = get_mcs_threshold(baseline_sinr_db)
-        if target_th < 0:
-            continue
+        if target_th < 0: continue
         interference = total_p2 * cross_h_primary[j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
         margins.append(actual_sinr_db - target_th)
     return min(margins) if margins else -999.0
 
-se_pred_list = []
-se_true_list = []
+# Metric Lists
+se_pred_list_sec = []
+se_true_list_sec = []
 
-interf_pred_list = []
-interf_true_list = []
-
-rounds_list = []
-success_list = []
-violation_list = []
-se_pred_list_primary = []
+se_pred_list_primary_ACTUAL = []  # The real damaged primary rate
 se_true_list_primary = []
 
-csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
+interf_pred_list_ACTUAL = []      # The real physical interference causing damage
+interf_true_list = []
+
+success_list = []
+violation_list_ACTUAL = []        # Did the attack actually violate the physical constraint?
+
+csv_path = os.path.join(RESULT_DIR, "benchmark_poisoned.csv")
 csv_file = open(csv_path, "w", newline="")
 csv_writer = csv.writer(csv_file)
 csv_writer.writerow([
-    "Sample", "TrueRate", "PredRate",
-    "TruePrimaryRate", "PredPrimaryRate",
-    "TrueInterference", "PredInterference", "Violation", "Rounds", "Decision", "TrueP2", "PredP2"
+    "Sample", "TrueSecRate", "PredSecRate",
+    "TruePrimaryRate", "ActualDamagedPrimaryRate",
+    "TrueInterference", "ActualInjectedInterference", "ActualViolation", "Rounds", "Decision", "TrueP2", "PredP2"
 ])
 
-print(f"\nStarting Benchmark over {len(test)} Test Samples...")
+print(f"\nStarting CSI Poisoning Benchmark over {len(test)} Test Samples...")
 
+# --- MAIN LOOP ---
 for i in range(len(test)):
-    direct_h_sec = test[i][1]
-    cross_h_sec = test[i][3]
     direct_h_prim = test[i][0]
-    cross_h_prim = test[i][2]
+    direct_h_sec = test[i][1]
+    cross_h_prim = test[i][2]      # TRUE cross channel (Physical reality)
+    cross_h_sec = test[i][3]
     true_p1 = test[i][4]
     true_p2 = test[i][5]
 
+    # 1. Create the False Reality (The Attack)
     poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
 
     initial_state = {
         "direct_primary_channels": test[i][0],
         "direct_secondary_channels": test[i][1],
-        "cross_primary_channels": poisoned_cross_h_pri,
+        "cross_primary_channels": poisoned_cross_h_pri, # Agent is fed the LIES
         "cross_secondary_channels": test[i][3],
         "P1": test[i][4],
         "P2": [0] * M,
@@ -106,141 +112,104 @@ for i in range(len(test)):
         "iteration": 0
     }
 
+    # Agent negotiates based on poisoned channels
     result = app.invoke(initial_state)
     pred_p2 = result['P2']
 
-    margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
-    margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim) 
+    # 2. Evaluate Secondary Rate (Secondary doesn't care about Primary's channels)
+    rate_pred_sec = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
+    rate_true_sec = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
+    se_pred_list_sec.append(rate_pred_sec)
+    se_true_list_sec.append(rate_true_sec)
 
-    # 1. Calculate Discrete Secondary Rates
-    rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
-    rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
-    se_pred_list.append(rate_pred)
-    se_true_list.append(rate_true)
-
-    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
+    # 3. Evaluate Primary Rate (THE IMPACT)
+    # -> Use TRUE channels here to see how much the throughput crashed
+    rate_actual_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
     rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
-    se_pred_list_primary.append(rate_pred_primary)
+    se_pred_list_primary_ACTUAL.append(rate_actual_primary)
     se_true_list_primary.append(rate_true_primary)
 
-    # 2. Calculate Worst-Case Caused Interference on Primary Receivers
-    max_interf_pred = sum(pred_p2) * max(poisoned_cross_h_pri)
-    max_interf_true = sum(true_p2) * max(cross_h_prim)
-    interf_pred_list.append(max_interf_pred)
-    interf_true_list.append(max_interf_true)
-    # 3. Calculate the sucess rate
+    # 4. Evaluate Interference (THE IMPACT)
+    # What the primary BELIEVED the interference was (why it accepted):
+    interf_believed = sum(pred_p2) * max(poisoned_cross_h_pri) 
+    
+    # What the interference ACTUALLY is in the physical world (The damage):
+    interf_actual = sum(pred_p2) * max(cross_h_prim) 
+    interf_true = sum(true_p2) * max(cross_h_prim)
+    
+    interf_pred_list_ACTUAL.append(interf_actual)
+    interf_true_list.append(interf_true)
+
+    # 5. Check Violations 
+    actual_violation = 1 if interf_actual > primary_I_max else 0
+    violation_list_ACTUAL.append(actual_violation)
     success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
-    # 4. Constraint violation
-    violation_list.append(1 if max_interf_pred > primary_I_max else 0)
 
     csv_writer.writerow([
-        i + 1, rate_true, rate_pred,
-        rate_true_primary, rate_pred_primary,
-        max_interf_true, max_interf_pred, violation_list[i],
+        i + 1, rate_true_sec, rate_pred_sec,
+        rate_true_primary, rate_actual_primary,
+        interf_true, interf_actual, actual_violation,
         result["iteration"], result["primary_decision"], sum(true_p2), sum(pred_p2)
     ])
 
-    print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
-    print(f"True P2: {true_p2}")
-    print(f"pred P2: {result['P2']}")
+    print(f"Sample {i+1} | Sec Rate: {rate_pred_sec} | Primary Believed Interf: {interf_believed:.1f} | ACTUAL Injected Interf: {interf_actual:.1f} | Violation: {'YES' if actual_violation else 'NO'}")
 
 csv_file.close()
-metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
-save_file(metrics_path)
-print(f"System Benchmark Before attack:\n")
-print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
-print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
-print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
-print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
-print(f"Efficiency: {np.mean(success_list):.0%}")
-print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
-# Only attempt to plot if there are enough test samples for binning
+# --- CONSOLE METRICS ---
+print(f"\n=== System Benchmark AFTER Attack ===")
+print(f"Average Secondary Rate (Agent): {np.mean(se_pred_list_sec):.2f} Mbps")
+print(f"Average Primary Rate (Actual Damaged): {np.mean(se_pred_list_primary_ACTUAL):.2f} Mbps")
+print(f"Average Interference (Actual Injected): {np.mean(interf_pred_list_ACTUAL):.2f}")
+print(f"Max Interference (Actual Injected): {np.max(interf_pred_list_ACTUAL):.2f}")
+print(f"Agent Success Rate (Tricked Primary): {np.mean(success_list):.0%}")
+print(f"ACTUAL Constraint Violations: {np.mean(violation_list_ACTUAL):.0%}")
+
+# --- PLOTTING ---
 if len(test) > 0:
     bin_size = 5
-    # Recalculate num_bins to ensure it's at least 1 if there's data, or correctly reflects the number of bins
     num_bins = (len(test) + bin_size - 1) // bin_size
-
-    # Recalculate bin_x based on the corrected num_bins
     bin_x = [i * bin_size for i in range(1, num_bins + 1)]
 
-    # The binned lists are already calculated correctly based on len(se_pred_list) and bin_size
-    binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
-    binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
-
-    binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
-    binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
-
-    binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
+    # Binned Interference
+    binned_interf_actual = [np.mean(interf_pred_list_ACTUAL[i : i + bin_size]) for i in range(0, len(interf_pred_list_ACTUAL), bin_size)]
     binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
 
-
+    # Plot 1: The Interference Damage
     plt.figure(figsize=(10, 5))
-    plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
-    plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Limit (${{I_{{max}}}}={primary_I_max}$)')
+    plt.plot(bin_x, binned_interf_true, label='Safe Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
+    
+    # Plotting the ACTUAL interference in RED to show the massive violation
+    plt.plot(bin_x, binned_interf_actual, label='ACTUAL Attack Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
 
-    plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
-    plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
-    plt.xticks(bin_x)
-    plt.legend(fontsize=11)
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            RESULT_DIR,
-            "secondary_rate_normal.png"
-        ),
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
-    plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
-
-    plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
-    plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
-    plt.xticks(bin_x)
-    plt.legend(fontsize=11)
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            RESULT_DIR,
-            "primary_rate_normal.png"
-        ),
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.figure(figsize=(10, 5))
-
-    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
-
-    plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
-    plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
-
-    plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    plt.title('Impact of CSI Poisoning: Real Physical Interference vs Limit', fontsize=13, color='darkred')
+    plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Max Interference Injected', fontsize=11)
     plt.xticks(bin_x)
-    plt.legend(fontsize=11, loc='upper right')
+    plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            RESULT_DIR,
-            "primary_interference_normal.png"
-        ),
-        dpi=300,
-        bbox_inches="tight"
-    )
+    plt.savefig(os.path.join(RESULT_DIR, "attack_interference_impact.png"), dpi=300)
+
+    # Plot 2: Primary Throughput Damage
+    binned_se_pred_primary = [np.mean(se_pred_list_primary_ACTUAL[i : i + bin_size]) for i in range(0, len(se_pred_list_primary_ACTUAL), bin_size)]
+    binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o')
+    plt.plot(bin_x, binned_se_pred_primary, label='Damaged Primary Rate (Under Attack)', color='red', linestyle='-', marker='s')
+
+    plt.title('Impact of CSI Poisoning: Primary Network Throughput Crash', fontsize=13, color='darkred')
+    plt.xlabel('Test Sample Index', fontsize=11)
+    plt.ylabel('Actual Primary Rate (Mbps)', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULT_DIR, "attack_primary_rate_crash.png"), dpi=300)
 
     plt.show()
-else:
-    print("No test samples to plot.")
 
 # data = gen_channels(100)
 # test_data = data[90:100]
