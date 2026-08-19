@@ -95,12 +95,12 @@ for i in range(len(test)):
     true_p1 = test[i][4]
     true_p2 = test[i][5]
 
-    poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
+    # poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
 
     initial_state = {
     "direct_primary_channels": test[i][0],
     "direct_secondary_channels": test[i][1],
-    "cross_primary_channels": poisoned_cross_h_pri,
+    "cross_primary_channels": cross_h_prim,
     "cross_secondary_channels": test[i][3],
     "P1": test[i][4],
     "P2": [0] * M,
@@ -115,8 +115,8 @@ for i in range(len(test)):
 
     pred_p2 = result['P2']
 
-    margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
-    margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
+    # margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
+    # margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
 
     # 1. Calculate Discrete Secondary Rates
     rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
@@ -124,7 +124,7 @@ for i in range(len(test)):
     se_pred_list.append(rate_pred)
     se_true_list.append(rate_true)
 
-    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
+    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
     rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
     se_pred_list_primary.append(rate_pred_primary)
     se_true_list_primary.append(rate_true_primary)
@@ -132,7 +132,7 @@ for i in range(len(test)):
 
     # 2. Calculate Worst-Case Caused Interference on Primary Receivers
 
-    max_interf_pred = sum(pred_p2) * max(poisoned_cross_h_pri)
+    max_interf_pred = sum(pred_p2) * max(cross_h_prim)
     max_interf_true = sum(true_p2) * max(cross_h_prim)
     interf_pred_list.append(max_interf_pred)
     interf_true_list.append(max_interf_true)
@@ -188,8 +188,8 @@ if len(test) > 0:
     plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
 
-    plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    # plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
     plt.xticks(bin_x)
     plt.legend(fontsize=11)
@@ -207,8 +207,8 @@ if len(test) > 0:
     plt.figure(figsize=(10, 5))
     plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
-    plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    # plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
     plt.xticks(bin_x)
     plt.legend(fontsize=11)
@@ -227,8 +227,8 @@ if len(test) > 0:
     plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
     plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
     plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
-    plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
-    plt.xlabel('Test Sample Index (Bin Size = 5)', fontsize=11)
+    # plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
     plt.ylabel('Average Max Interference Injected', fontsize=11)
     plt.xticks(bin_x)
     plt.legend(fontsize=11, loc='upper right')
