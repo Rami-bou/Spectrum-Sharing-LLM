@@ -294,5 +294,5 @@ def gen_channels(length):
 
 
 data = gen_channels(190)
-train = data[:90]
+train = data[:70]
 test = data[90:]
