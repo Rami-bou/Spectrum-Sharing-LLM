@@ -217,7 +217,7 @@ if len(test) > 0:
     plt.savefig(
     os.path.join(
     RESULT_DIR,
-    "primary_rate_csi_pois.png"
+    "attack_primary_rate_crash.png"
     ),
     dpi=300,
     bbox_inches="tight"
@@ -237,7 +237,7 @@ if len(test) > 0:
     plt.savefig(
     os.path.join(
     RESULT_DIR,
-    "primary_interference_csi_pois.png"
+    "attack_interference_impact.png"
     ),
     dpi=300,
     bbox_inches="tight"
