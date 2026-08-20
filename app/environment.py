@@ -21,8 +21,8 @@ c = 3e8
 wave = c / f
 scale_factor = 1e8
 
-secondary_I_max = 1000
-primary_I_max = 300
+secondary_I_max = 3000
+primary_I_max = 1000
 
 
 primary_transmitter = [80, 80]
@@ -251,8 +251,8 @@ def gen_channels(length):
         # secondary can tolerate. This is the genuine, standalone use of
         # secondary_I_max now -- a real constraint check, not a budget generator.
         allowed_p1_ceiling = secondary_I_max / max(cross_h_secondary)
-        # if sum(P1_dist) > allowed_p1_ceiling:
-        #     continue
+        if sum(P1_dist) > allowed_p1_ceiling:
+            continue
 
         # Reject the sample if ANY primary receiver fails to clear the lowest MCS
         # tier at baseline (P2=0) -- kept as a safety net; should always pass by
