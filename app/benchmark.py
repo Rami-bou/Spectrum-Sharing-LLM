@@ -44,25 +44,24 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- PRE-SETUP ---
 
-POISON_FACTOR = 0.1
+# POISON_FACTOR = 0.1
 
 
-def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
-    total_p2 = sum(P2_vector)
-    margins = []
-    for j in range(len(P1_vector)):
-        signal = P1_vector[j] * direct_h_primary[j]
-        if signal <= 0: continue
-        baseline_sinr_db = 10 * math.log10(signal)
-        target_th = get_mcs_threshold(baseline_sinr_db)
-        if target_th < 0: continue
-        interference = total_p2 * cross_h_primary[j]
-        actual_sinr_linear = signal / (1.0 + interference)
-        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-        margins.append(actual_sinr_db - target_th)
-    return min(margins) if margins else -999.0
+# def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+#     total_p2 = sum(P2_vector)
+#     margins = []
+#     for j in range(len(P1_vector)):
+#         signal = P1_vector[j] * direct_h_primary[j]
+#         if signal <= 0: continue
+#         baseline_sinr_db = 10 * math.log10(signal)
+#         target_th = get_mcs_threshold(baseline_sinr_db)
+#         if target_th < 0: continue
+#         interference = total_p2 * cross_h_primary[j]
+#         actual_sinr_linear = signal / (1.0 + interference)
+#         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
+#         margins.append(actual_sinr_db - target_th)
+#     return min(margins) if margins else -999.0
 
 se_pred_list = []
 se_true_list = []
@@ -95,12 +94,12 @@ for i in range(len(test)):
     true_p1 = test[i][4]
     true_p2 = test[i][5]
 
-    poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
+    # poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
 
     initial_state = {
     "direct_primary_channels": test[i][0],
     "direct_secondary_channels": test[i][1],
-    "cross_primary_channels": poisoned_cross_h_pri,
+    "cross_primary_channels": test[i][2],
     "cross_secondary_channels": test[i][3],
     "P1": test[i][4],
     "P2": [0] * M,
