@@ -8,6 +8,22 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import math
 from environment import get_mcs_threshold, MCS, M, N, allocate_p2_knapsack_optimal, train
 
+
+FIELD_OWNERS = {
+    "P2": "secondary",
+    "delta_hist": "secondary",
+    "secondary_critique": "secondary",
+    "primary_critique": "primary",
+    "primary_decision": "primary",
+    "direct_primary_channels": "system",
+    "cross_primary_channels": "system",
+}
+
+def enforce_write(field, writer, value, state):
+    if FIELD_OWNERS.get(field) != writer:
+        raise PermissionError(f"{writer} is not permitted to write '{field}'")
+    state[field] = value
+    
 class GraphState(TypedDict):
     direct_primary_channels: List[int]
     direct_secondary_channels: List[int]
@@ -27,6 +43,15 @@ class GraphState(TypedDict):
     iteration: int
 
     worst_margin: float
+
+# class PrimaryChannelState(TypedDict):
+#     direct_primary_channels: List[float]
+#     cross_primary_channels: List[float]
+
+# primary_channels = PrimaryChannelState(
+#     direct_primary_channels=test[i][0],
+#     cross_primary_channels=test[i][2],
+# )
 
 def build_prompt(train):
     prompt_primary = f"""You are the secondary transmitter in a wireless communication scenario.
