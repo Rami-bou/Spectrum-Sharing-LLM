@@ -627,7 +627,7 @@ if len(test) > 0:
     plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
-    plt.savefig(os.path.join(RESULT_DIR, "secondary_rate_csi_pois.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(RESULT_DIR, "normal_secondary_rate_rolling_median.png"), dpi=300, bbox_inches="tight")
 
     # PLOT 2: Primary Rate
     plt.figure(figsize=(10, 5))
@@ -639,7 +639,7 @@ if len(test) > 0:
     plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
-    plt.savefig(os.path.join(RESULT_DIR, "attack_primary_rate_crash.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(RESULT_DIR, "normal_primary_rate_rolling_media.png"), dpi=300, bbox_inches="tight")
 
     # PLOT 3: Interference
     plt.figure(figsize=(10, 5))
@@ -652,7 +652,7 @@ if len(test) > 0:
     plt.legend(fontsize=11, loc='upper right')
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
-    plt.savefig(os.path.join(RESULT_DIR, "attack_interference_impact.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(RESULT_DIR, "normal_interference_rolling_median.png"), dpi=300, bbox_inches="tight")
     
     plt.show()
 else:
