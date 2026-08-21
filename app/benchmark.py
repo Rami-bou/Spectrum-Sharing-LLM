@@ -38,6 +38,12 @@
 
 #         f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
+# import os
+# import csv
+# import math
+# import numpy as np
+# import matplotlib.pyplot as plt
+
 
 # # POISON_FACTOR = 0.1
 
@@ -237,7 +243,7 @@
 #     )
 #     plt.show()
 # else:
-#     print("No test samples to plot.")
+#     print("No test samples to plot.") 
 
 import os
 import csv
@@ -245,40 +251,54 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
+
+import environment
+from environment import (
+    gen_channels,
+    primary_I_max,
+    calculate_secondary_discrete_rate,
+    calculate_primary_discrete_rate,
+    M
+)
 from graph import app
-from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, calculate_primary_discrete_rate, get_mcs_threshold
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 RESULT_DIR = os.path.join("results", f"spatial_benchmark_{timestamp}")
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-# 1. Define the positions you want to test
 positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [65, 65], [70, 70]]
 position_labels = [f"[{x},{y}]" for x, y in positions]
 
-# We will store the AVERAGE results for each position here
 pos_avg_se_pred = []
 pos_avg_se_true = []
 pos_avg_prim_pred = []
 pos_avg_prim_true = []
 pos_avg_interf_pred = []
 pos_avg_interf_true = []
+pos_violation_rate = []
+pos_success_rate = []
 
-print(f"Starting Spatial Benchmark over {len(positions)} positions...\n")
+csv_path = os.path.join(RESULT_DIR, "spatial_benchmark.csv")
+csv_file = open(csv_path, "w", newline="")
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow([
+    "Position", "Sample", "TrueRate", "PredRate",
+    "TruePrimaryRate", "PredPrimaryRate",
+    "TrueInterference", "PredInterference", "Violation", "Rounds", "Decision"
+])
 
-# =====================================================================
-# SIMULATION LOOP (Iterating over positions)
-# =====================================================================
-for pos_idx, pos in enumerate(positions):
-    print(f"{'='*50}")
+print(f"Starting Spatial Benchmark across {len(positions)} positions...\n")
+
+for pos in positions:
+    print(f"==================================================")
     print(f"Evaluating Secondary Position: {pos}")
-    print(f"{'='*50}")
-    
-    # [CRITICAL STEP]: Generate new test data for this specific position
-    # You must adapt the arguments below to match your environment.py definition!
-    # e.g., test_samples = gen_channels(num_samples=100, sec_position=pos)
-    test_samples = gen_channels(sec_pos=pos) 
-    
+    print(f"==================================================")
+
+    # Clear global environment data list before generating fresh channels for the new location
+    environment.data.clear()
+    dataset = gen_channels(100, pos)
+    test_samples = dataset[70:]  # Evaluation subset (30 test samples per position)
+
     se_pred_list = []
     se_true_list = []
     se_pred_list_primary = []
@@ -286,14 +306,15 @@ for pos_idx, pos in enumerate(positions):
     interf_pred_list = []
     interf_true_list = []
     violation_list = []
-    
-    for i in range(len(test_samples)):
-        direct_h_prim = test_samples[i][0]
-        direct_h_sec = test_samples[i][1]
-        cross_h_prim = test_samples[i][2]
-        cross_h_sec = test_samples[i][3]
-        true_p1 = test_samples[i][4]
-        true_p2 = test_samples[i][5]
+    success_list = []
+
+    for i, sample in enumerate(test_samples):
+        direct_h_prim = sample[0]
+        direct_h_sec = sample[1]
+        cross_h_prim = sample[2]
+        cross_h_sec = sample[3]
+        true_p1 = sample[4]
+        true_p2 = sample[5]
 
         initial_state = {
             "direct_primary_channels": direct_h_prim,
@@ -309,11 +330,9 @@ for pos_idx, pos in enumerate(positions):
             "iteration": 0
         }
 
-        # Run LLM Agent
         result = app.invoke(initial_state)
-        pred_p2 = result['P2']
+        pred_p2 = result["P2"]
 
-        # Calculate Rates
         rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
         rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
         se_pred_list.append(rate_pred)
@@ -324,35 +343,57 @@ for pos_idx, pos in enumerate(positions):
         se_pred_list_primary.append(rate_pred_primary)
         se_true_list_primary.append(rate_true_primary)
 
-        # Calculate Interference
         max_interf_pred = sum(pred_p2) * max(cross_h_prim)
         max_interf_true = sum(true_p2) * max(cross_h_prim)
         interf_pred_list.append(max_interf_pred)
         interf_true_list.append(max_interf_true)
-        
-        print(f"  Sample {i+1} | Pred Sec Rate: {rate_pred:.1f} | Pred Interf: {max_interf_pred:.1f}")
 
-    # Store the averages for this position
+        is_violation = 1 if max_interf_pred > primary_I_max else 0
+        is_success = 1 if result["primary_decision"] == "ACCEPT" else 0
+        violation_list.append(is_violation)
+        success_list.append(is_success)
+
+        csv_writer.writerow([
+            str(pos), i + 1, rate_true, rate_pred,
+            rate_true_primary, rate_pred_primary,
+            max_interf_true, max_interf_pred, is_violation,
+            result["iteration"], result["primary_decision"]
+        ])
+
+        print(f"Pos {pos} | Sample {i+1}/{len(test_samples)} | Sec Rate: {rate_pred:.1f} Mbps | Interf: {max_interf_pred:.1f}")
+
     pos_avg_se_pred.append(np.mean(se_pred_list))
     pos_avg_se_true.append(np.mean(se_true_list))
-    
     pos_avg_prim_pred.append(np.mean(se_pred_list_primary))
     pos_avg_prim_true.append(np.mean(se_true_list_primary))
-    
     pos_avg_interf_pred.append(np.mean(interf_pred_list))
     pos_avg_interf_true.append(np.mean(interf_true_list))
+    pos_violation_rate.append(100 * np.mean(violation_list))
+    pos_success_rate.append(100 * np.mean(success_list))
 
+csv_file.close()
 
-# =====================================================================
-# PLOTTING METRICS VS POSITIONS
-# =====================================================================
-x_indices = np.arange(len(positions)) # 0, 1, 2... for the x-axis
+# Save Aggregate Metrics Summary
+metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
+with open(metrics_path, "w") as f:
+    f.write("=" * 60 + "\n")
+    f.write("SPATIAL BENCHMARK SUMMARY PER POSITION\n")
+    f.write("=" * 60 + "\n\n")
+    for idx, pos in enumerate(positions):
+        f.write(f"Position {pos}:\n")
+        f.write(f"  Secondary Rate (True / Pred) : {pos_avg_se_true[idx]:.2f} / {pos_avg_se_pred[idx]:.2f} Mbps\n")
+        f.write(f"  Primary Rate (True / Pred)   : {pos_avg_prim_true[idx]:.2f} / {pos_avg_prim_pred[idx]:.2f} Mbps\n")
+        f.write(f"  Interference (True / Pred)   : {pos_avg_interf_true[idx]:.2f} / {pos_avg_interf_pred[idx]:.2f}\n")
+        f.write(f"  Violation Rate               : {pos_violation_rate[idx]:.2f} %\n")
+        f.write(f"  Negotiation Success Rate     : {pos_success_rate[idx]:.2f} %\n\n")
 
-# 1. Secondary Rate vs Position
+# Visualizations
+x_indices = np.arange(len(positions))
+
+# 1. Secondary Rate Plot
 plt.figure(figsize=(10, 5))
 plt.plot(x_indices, pos_avg_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
 plt.plot(x_indices, pos_avg_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
-plt.title('Secondary Network Sum Rate by Spatial Position', fontsize=13)
 plt.xlabel('Secondary Network Position [x, y]', fontsize=11)
 plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
 plt.xticks(x_indices, position_labels)
@@ -361,62 +402,48 @@ plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
 plt.savefig(os.path.join(RESULT_DIR, "secondary_rate_spatial.png"), dpi=300)
 
-# 2. Primary Rate vs Position
+# 2. Primary Rate Plot
 plt.figure(figsize=(10, 5))
 plt.plot(x_indices, pos_avg_prim_true, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
 plt.plot(x_indices, pos_avg_prim_pred, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
-plt.title('Primary Network Sum Rate by Spatial Position', fontsize=13)
 plt.xlabel('Secondary Network Position [x, y]', fontsize=11)
 plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
 plt.xticks(x_indices, position_labels)
 plt.legend(fontsize=11)
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig(os.path.join(RESULT_DIR, "primary_rate_spatial.png"), dpi=300)
+plt.savefig(os.path.join(RESULT_DIR, "attack_primary_rate_crash.png"), dpi=300)
 
-# 3. Interference vs Position
+# 3. Interference Plot
 plt.figure(figsize=(10, 5))
 plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
 plt.plot(x_indices, pos_avg_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
 plt.plot(x_indices, pos_avg_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
-plt.title('Primary Network Protection: Injected Interference by Position', fontsize=13)
 plt.xlabel('Secondary Network Position [x, y]', fontsize=11)
 plt.ylabel('Average Max Interference Injected', fontsize=11)
 plt.xticks(x_indices, position_labels)
-plt.legend(fontsize=11)
+plt.legend(fontsize=11, loc='upper right')
 plt.grid(True, linestyle=':', alpha=0.7)
 plt.tight_layout()
-plt.savefig(os.path.join(RESULT_DIR, "interference_spatial.png"), dpi=300)
+plt.savefig(os.path.join(RESULT_DIR, "attack_interference_impact.png"), dpi=300)
 
-
-# =====================================================================
-# TOPOLOGY VISUALIZATION (Plotting the movement map)
-# =====================================================================
+# 4. Topology Movement Map
 plt.figure(figsize=(8, 8))
+plt.scatter(80, 80, marker='*', color='gold', s=400, edgecolors='black', zorder=6, label='Primary Tx [80, 80]')
 
-# Assume Primary Tx is at origin (0,0)
-plt.scatter(0, 0, marker='*', color='gold', s=400, edgecolors='black', label='Primary Tx (Origin)')
-
-# Draw a circle representing the primary boundary (radius calculated to just touch [65,65])
-# Distance to [65,65] is sqrt(65^2 + 65^2) = 91.92
-boundary_radius = math.sqrt(65**2 + 65**2)
-circle = plt.Circle((0, 0), boundary_radius, color='gray', fill=False, linestyle='--', linewidth=2, label=f'Primary Boundary (R$\approx${boundary_radius:.1f})')
+boundary_radius = 35.0
+circle = plt.Circle((80, 80), boundary_radius, color='gray', fill=False, linestyle='--', linewidth=2, label='Primary Protection Zone')
 plt.gca().add_patch(circle)
 
-# Plot all secondary positions
 colors = plt.cm.viridis(np.linspace(0, 1, len(positions)))
 for idx, (pos, color) in enumerate(zip(positions, colors)):
-    plt.scatter(pos[0], pos[1], color=color, s=150, zorder=5, label=f'Sec Pos {idx+1}: {pos}')
+    plt.scatter(pos[0], pos[1], color=color, s=150, zorder=5, label=f'Pos {idx+1}: {pos}')
 
-plt.title('Spatial Topology: Secondary Network Movement', fontsize=14)
-plt.xlabel('X Coordinate', fontsize=12)
-plt.ylabel('Y Coordinate', fontsize=12)
-plt.axhline(0, color='black', linewidth=0.5, alpha=0.5)
-plt.axvline(0, color='black', linewidth=0.5, alpha=0.5)
+plt.xlabel('X Coordinate (m)', fontsize=12)
+plt.ylabel('Y Coordinate (m)', fontsize=12)
 plt.grid(True, linestyle=':', alpha=0.6)
-plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=10) # Place legend outside
-plt.axis('equal') # Keep aspect ratio square so the circle isn't distorted
+plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
+plt.axis('equal')
 plt.tight_layout()
 plt.savefig(os.path.join(RESULT_DIR, "topology_map.png"), dpi=300, bbox_inches="tight")
-
 plt.show()
