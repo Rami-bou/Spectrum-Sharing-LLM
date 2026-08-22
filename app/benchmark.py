@@ -1,249 +1,249 @@
-# import os
-# import csv
-# from datetime import datetime
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import math
-# from graph import app
-# from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test, calculate_primary_discrete_rate, get_mcs_threshold
+import os
+import csv
+from datetime import datetime
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+from graph import app
+from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test, calculate_primary_discrete_rate, get_mcs_threshold
 
-# timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
-# os.makedirs(RESULT_DIR, exist_ok=True)
+RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
+os.makedirs(RESULT_DIR, exist_ok=True)
 
-# def save_file(metrics_path):
-#     with open(metrics_path, "w") as f:
-#         f.write("=" * 60 + "\n")
-#         f.write("BASELINE PERFORMANCE\n")
-#         f.write("=" * 60 + "\n\n")
+def save_file(metrics_path):
+    with open(metrics_path, "w") as f:
+        f.write("=" * 60 + "\n")
+        f.write("BASELINE PERFORMANCE\n")
+        f.write("=" * 60 + "\n\n")
 
-#         f.write(f"Average Secondary Rate      : {np.mean(se_pred_list):.2f} Mbps\n")
-#         f.write(f"Average Optimal Rate        : {np.mean(se_true_list):.2f} Mbps\n")
+        f.write(f"Average Secondary Rate      : {np.mean(se_pred_list):.2f} Mbps\n")
+        f.write(f"Average Optimal Rate        : {np.mean(se_true_list):.2f} Mbps\n")
 
-#         efficiency = 100 * np.mean(se_pred_list) / np.mean(se_true_list)
+        efficiency = 100 * np.mean(se_pred_list) / np.mean(se_true_list)
 
-#         f.write(f"Efficiency                 : {efficiency:.2f} %\n\n")
+        f.write(f"Efficiency                 : {efficiency:.2f} %\n\n")
 
-#         f.write(f"Average Interference        : {np.mean(interf_pred_list):.2f}\n")
-#         f.write(f"Maximum Interference        : {np.max(interf_pred_list):.2f}\n")
+        f.write(f"Average Interference        : {np.mean(interf_pred_list):.2f}\n")
+        f.write(f"Maximum Interference        : {np.max(interf_pred_list):.2f}\n")
 
-#         violation_rate = 100 * np.mean(violation_list)
+        violation_rate = 100 * np.mean(violation_list)
 
-#         f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
+        f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
 
-#         #f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
+        #f.write(f"Average Negotiation Rounds : {np.mean(rounds_list):.2f}\n")
 
-#         success_rate = 100 * np.mean(success_list)
+        success_rate = 100 * np.mean(success_list)
 
-#         f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
+        f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
 
-# import os
-# import csv
-# import math
-# import numpy as np
-# import matplotlib.pyplot as plt
-
-
-# # POISON_FACTOR = 0.1
+import os
+import csv
+import math
+import numpy as np
+import matplotlib.pyplot as plt
 
 
-# # def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
-# #     total_p2 = sum(P2_vector)
-# #     margins = []
-# #     for j in range(len(P1_vector)):
-# #         signal = P1_vector[j] * direct_h_primary[j]
-# #         if signal <= 0: continue
-# #         baseline_sinr_db = 10 * math.log10(signal)
-# #         target_th = get_mcs_threshold(baseline_sinr_db)
-# #         if target_th < 0: continue
-# #         interference = total_p2 * cross_h_primary[j]
-# #         actual_sinr_linear = signal / (1.0 + interference)
-# #         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-# #         margins.append(actual_sinr_db - target_th)
-# #     return min(margins) if margins else -999.0
-
-# se_pred_list = []
-# se_true_list = []
-
-# interf_pred_list = []
-# interf_true_list = []
-
-# rounds_list = []
-# success_list = []
-# violation_list = []
-# se_pred_list_primary = []
-# se_true_list_primary = []
-
-# csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
-# csv_file = open(csv_path, "w", newline="")
-# csv_writer = csv.writer(csv_file)
-# csv_writer.writerow([
-# "Sample", "TrueRate", "PredRate",
-# "TruePrimaryRate", "PredPrimaryRate",
-# "TrueInterference", "PredInterference", "Violation", "Rounds", "Decision", "TrueP2", "PredP2"
-# ])
-
-# print(f"\nStarting Benchmark over {len(test)} Test Samples...")
-
-# for i in range(len(test)):
-#     direct_h_sec = test[i][1]
-#     cross_h_sec = test[i][3]
-#     direct_h_prim = test[i][0]
-#     cross_h_prim = test[i][2]
-#     true_p1 = test[i][4]
-#     true_p2 = test[i][5]
-
-#     # poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
-
-#     initial_state = {
-#     "direct_primary_channels": test[i][0],
-#     "direct_secondary_channels": test[i][1],
-#     "cross_primary_channels": test[i][2],
-#     "cross_secondary_channels": test[i][3],
-#     "P1": test[i][4],
-#     "P2": [0] * M,
-#     "primary_critique": "",
-#     "secondary_critique": "",
-#     "primary_decision": "",
-#     "delta_hist": [],
-#     "iteration": 0
-#     }
-
-#     result = app.invoke(initial_state)
-
-#     pred_p2 = result['P2']
-
-#     # margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
-#     # margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
-
-#     # 1. Calculate Discrete Secondary Rates
-#     rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
-#     rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
-#     se_pred_list.append(rate_pred)
-#     se_true_list.append(rate_true)
-
-#     rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
-#     rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
-#     se_pred_list_primary.append(rate_pred_primary)
-#     se_true_list_primary.append(rate_true_primary)
+# POISON_FACTOR = 0.1
 
 
-#     # 2. Calculate Worst-Case Caused Interference on Primary Receivers
+# def compute_worst_margin(P1_vector, P2_vector, direct_h_primary, cross_h_primary):
+#     total_p2 = sum(P2_vector)
+#     margins = []
+#     for j in range(len(P1_vector)):
+#         signal = P1_vector[j] * direct_h_primary[j]
+#         if signal <= 0: continue
+#         baseline_sinr_db = 10 * math.log10(signal)
+#         target_th = get_mcs_threshold(baseline_sinr_db)
+#         if target_th < 0: continue
+#         interference = total_p2 * cross_h_primary[j]
+#         actual_sinr_linear = signal / (1.0 + interference)
+#         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
+#         margins.append(actual_sinr_db - target_th)
+#     return min(margins) if margins else -999.0
 
-#     max_interf_pred = sum(pred_p2) * max(cross_h_prim)
-#     max_interf_true = sum(true_p2) * max(cross_h_prim)
-#     interf_pred_list.append(max_interf_pred)
-#     interf_true_list.append(max_interf_true)
-#     # 3. Calculate the sucess rate
-#     success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
-#     # 4. Constraint violation
-#     violation_list.append(1 if max_interf_pred > primary_I_max else 0)
+se_pred_list = []
+se_true_list = []
 
-#     csv_writer.writerow([
-#     i + 1, rate_true, rate_pred,
-#     rate_true_primary, rate_pred_primary,
-#     max_interf_true, max_interf_pred, violation_list[i],
-#     result["iteration"], result["primary_decision"], sum(true_p2), sum(pred_p2)
-#     ])
+interf_pred_list = []
+interf_true_list = []
 
-#     print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
-#     print(f"True P2: {true_p2}")
-#     print(f"pred P2: {result['P2']}")
+rounds_list = []
+success_list = []
+violation_list = []
+se_pred_list_primary = []
+se_true_list_primary = []
+
+csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
+csv_file = open(csv_path, "w", newline="")
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow([
+"Sample", "TrueRate", "PredRate",
+"TruePrimaryRate", "PredPrimaryRate",
+"TrueInterference", "PredInterference", "Violation", "Rounds", "Decision", "TrueP2", "PredP2"
+])
+
+print(f"\nStarting Benchmark over {len(test)} Test Samples...")
+
+for i in range(len(test)):
+    direct_h_sec = test[i][1]
+    cross_h_sec = test[i][3]
+    direct_h_prim = test[i][0]
+    cross_h_prim = test[i][2]
+    true_p1 = test[i][4]
+    true_p2 = test[i][5]
+
+    # poisoned_cross_h_pri = [max(1, v * POISON_FACTOR) for v in cross_h_prim]
+
+    initial_state = {
+    "direct_primary_channels": test[i][0],
+    "direct_secondary_channels": test[i][1],
+    "cross_primary_channels": test[i][2],
+    "cross_secondary_channels": test[i][3],
+    "P1": test[i][4],
+    "P2": [0] * M,
+    "primary_critique": "",
+    "secondary_critique": "",
+    "primary_decision": "",
+    "delta_hist": [],
+    "iteration": 0
+    }
+
+    result = app.invoke(initial_state)
+
+    pred_p2 = result['P2']
+
+    # margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
+    # margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
+
+    # 1. Calculate Discrete Secondary Rates
+    rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
+    rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
+    se_pred_list.append(rate_pred)
+    se_true_list.append(rate_true)
+
+    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
+    rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
+    se_pred_list_primary.append(rate_pred_primary)
+    se_true_list_primary.append(rate_true_primary)
 
 
-# csv_file.close()
+    # 2. Calculate Worst-Case Caused Interference on Primary Receivers
 
-# metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
+    max_interf_pred = sum(pred_p2) * max(cross_h_prim)
+    max_interf_true = sum(true_p2) * max(cross_h_prim)
+    interf_pred_list.append(max_interf_pred)
+    interf_true_list.append(max_interf_true)
+    # 3. Calculate the sucess rate
+    success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
+    # 4. Constraint violation
+    violation_list.append(1 if max_interf_pred > primary_I_max else 0)
 
-# save_file(metrics_path)
+    csv_writer.writerow([
+    i + 1, rate_true, rate_pred,
+    rate_true_primary, rate_pred_primary,
+    max_interf_true, max_interf_pred, violation_list[i],
+    result["iteration"], result["primary_decision"], sum(true_p2), sum(pred_p2)
+    ])
 
-# print(f"System Benchmark Before attack:\n")
-# print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
-# print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
-# print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
-# print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
-# print(f"Efficiency: {np.mean(success_list):.0%}")
-# print(f"Constraint Violations: {np.sum(violation_list):.0%}")
+    print(f"Sample {i+1}/100 | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
+    print(f"True P2: {true_p2}")
+    print(f"pred P2: {result['P2']}")
 
-# # Only attempt to plot if there are enough test samples for binning
-# if len(test) > 0:
-#     bin_size = 5
-#     # Recalculate num_bins to ensure it's at least 1 if there's data, or correctly reflects the number of bins
-#     num_bins = (len(test) + bin_size - 1) // bin_size
-#     # Recalculate bin_x based on the corrected num_bins
-#     bin_x = [i * bin_size for i in range(1, num_bins + 1)]
-#     # The binned lists are already calculated correctly based on len(se_pred_list) and bin_size
-#     binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
-#     binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
 
-#     binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
-#     binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
+csv_file.close()
 
-#     binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
-#     binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
+metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
 
-#     plt.figure(figsize=(10, 5))
-#     plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
-#     plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+save_file(metrics_path)
 
-#     # plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-#     plt.xlabel('Test Sample Index', fontsize=11)
-#     plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
-#     plt.xticks(bin_x)
-#     plt.legend(fontsize=11)
-#     plt.grid(True, linestyle=':', alpha=0.7)
-#     plt.tight_layout()
-#     plt.savefig(
-#     os.path.join(
-#     RESULT_DIR,
-#     "secondary_rate_csi_pois.png"
-#     ),
-#     dpi=300,
-#     bbox_inches="tight"
-#     )
+print(f"System Benchmark Before attack:\n")
+print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
+print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
+print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
+print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
+print(f"Efficiency: {np.mean(success_list):.0%}")
+print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
-#     plt.figure(figsize=(10, 5))
-#     plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
-#     plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
-#     # plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
-#     plt.xlabel('Test Sample Index', fontsize=11)
-#     plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
-#     plt.xticks(bin_x)
-#     plt.legend(fontsize=11)
-#     plt.grid(True, linestyle=':', alpha=0.7)
-#     plt.tight_layout()
-#     plt.savefig(
-#     os.path.join(
-#     RESULT_DIR,
-#     "attack_primary_rate_crash.png"
-#     ),
-#     dpi=300,
-#     bbox_inches="tight"
-#     )
+# Only attempt to plot if there are enough test samples for binning
+if len(test) > 0:
+    bin_size = 5
+    # Recalculate num_bins to ensure it's at least 1 if there's data, or correctly reflects the number of bins
+    num_bins = (len(test) + bin_size - 1) // bin_size
+    # Recalculate bin_x based on the corrected num_bins
+    bin_x = [i * bin_size for i in range(1, num_bins + 1)]
+    # The binned lists are already calculated correctly based on len(se_pred_list) and bin_size
+    binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
+    binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
 
-#     plt.figure(figsize=(10, 5))
-#     plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
-#     plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
-#     plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
-#     # plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
-#     plt.xlabel('Test Sample Index', fontsize=11)
-#     plt.ylabel('Average Max Interference Injected', fontsize=11)
-#     plt.xticks(bin_x)
-#     plt.legend(fontsize=11, loc='upper right')
-#     plt.grid(True, linestyle=':', alpha=0.7)
-#     plt.tight_layout()
-#     plt.savefig(
-#     os.path.join(
-#     RESULT_DIR,
-#     "attack_interference_impact.png"
-#     ),
-#     dpi=300,
-#     bbox_inches="tight"
-#     )
-#     plt.show()
-# else:
-#     print("No test samples to plot.") 
+    binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
+    binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
+
+    binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
+    binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+
+    # plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
+    plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(
+    os.path.join(
+    RESULT_DIR,
+    "secondary_rate_csi_pois.png"
+    ),
+    dpi=300,
+    bbox_inches="tight"
+    )
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+    # plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
+    plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(
+    os.path.join(
+    RESULT_DIR,
+    "attack_primary_rate_crash.png"
+    ),
+    dpi=300,
+    bbox_inches="tight"
+    )
+
+    plt.figure(figsize=(10, 5))
+    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
+    plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
+    plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
+    # plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.xlabel('Test Sample Index', fontsize=11)
+    plt.ylabel('Average Max Interference Injected', fontsize=11)
+    plt.xticks(bin_x)
+    plt.legend(fontsize=11, loc='upper right')
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(
+    os.path.join(
+    RESULT_DIR,
+    "attack_interference_impact.png"
+    ),
+    dpi=300,
+    bbox_inches="tight"
+    )
+    plt.show()
+else:
+    print("No test samples to plot.") 
 
 # import os
 # import csv
@@ -447,213 +447,3 @@
 # plt.tight_layout()
 # plt.savefig(os.path.join(RESULT_DIR, "topology_map.png"), dpi=300, bbox_inches="tight")
 # plt.show()
-
-
-
-### rolling media####################
-import os
-import csv
-from datetime import datetime
-import numpy as np
-import pandas as pd  # Added pandas for rolling calculations
-import matplotlib.pyplot as plt
-import math
-from graph import app
-from environment import primary_I_max, calculate_secondary_discrete_rate, gen_channels, MCS, M, train, test, calculate_primary_discrete_rate, get_mcs_threshold
-
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-RESULT_DIR = os.path.join("results", f"baseline_{timestamp}")
-os.makedirs(RESULT_DIR, exist_ok=True)
-
-def save_file(metrics_path):
-    with open(metrics_path, "w") as f:
-        f.write("=" * 60 + "\n")
-        f.write("BASELINE PERFORMANCE\n")
-        f.write("=" * 60 + "\n\n")
-
-        f.write(f"Average Secondary Rate      : {np.mean(se_pred_list):.2f} Mbps\n")
-        f.write(f"Average Optimal Rate        : {np.mean(se_true_list):.2f} Mbps\n")
-
-        efficiency = 100 * np.mean(se_pred_list) / np.mean(se_true_list)
-
-        f.write(f"Efficiency                 : {efficiency:.2f} %\n\n")
-
-        f.write(f"Average Interference        : {np.mean(interf_pred_list):.2f}\n")
-        f.write(f"Maximum Interference        : {np.max(interf_pred_list):.2f}\n")
-
-        violation_rate = 100 * np.mean(violation_list)
-
-        f.write(f"Violation Rate             : {violation_rate:.2f} %\n\n")
-
-        success_rate = 100 * np.mean(success_list)
-
-        f.write(f"Negotiation Success Rate   : {success_rate:.2f} %\n")
-
-se_pred_list = []
-se_true_list = []
-
-interf_pred_list = []
-interf_true_list = []
-
-rounds_list = []
-success_list = []
-violation_list = []
-se_pred_list_primary = []
-se_true_list_primary = []
-
-csv_path = os.path.join(RESULT_DIR, "benchmark.csv")
-csv_file = open(csv_path, "w", newline="")
-csv_writer = csv.writer(csv_file)
-csv_writer.writerow([
-    "Sample", "TrueRate", "PredRate",
-    "TruePrimaryRate", "PredPrimaryRate",
-    "TrueInterference", "PredInterference", "Violation", "Rounds", "Decision", "TrueP2", "PredP2"
-])
-
-print(f"\nStarting Benchmark over {len(test)} Test Samples...")
-
-for i in range(len(test)):
-    direct_h_sec = test[i][1]
-    cross_h_sec = test[i][3]
-    direct_h_prim = test[i][0]
-    cross_h_prim = test[i][2]
-    true_p1 = test[i][4]
-    true_p2 = test[i][5]
-
-    initial_state = {
-        "direct_primary_channels": test[i][0],
-        "direct_secondary_channels": test[i][1],
-        "cross_primary_channels": test[i][2],
-        "cross_secondary_channels": test[i][3],
-        "P1": test[i][4],
-        "P2": [0] * M,
-        "primary_critique": "",
-        "secondary_critique": "",
-        "primary_decision": "",
-        "delta_hist": [],
-        "iteration": 0
-    }
-
-    result = app.invoke(initial_state)
-
-    pred_p2 = result['P2']
-
-    # 1. Calculate Discrete Secondary Rates
-    rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
-    rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
-    se_pred_list.append(rate_pred)
-    se_true_list.append(rate_true)
-
-    rate_pred_primary = calculate_primary_discrete_rate(true_p1, pred_p2, direct_h_prim, cross_h_prim)
-    rate_true_primary = calculate_primary_discrete_rate(true_p1, true_p2, direct_h_prim, cross_h_prim)
-    se_pred_list_primary.append(rate_pred_primary)
-    se_true_list_primary.append(rate_true_primary)
-
-    # 2. Calculate Worst-Case Caused Interference on Primary Receivers
-    max_interf_pred = sum(pred_p2) * max(cross_h_prim)
-    max_interf_true = sum(true_p2) * max(cross_h_prim)
-    interf_pred_list.append(max_interf_pred)
-    interf_true_list.append(max_interf_true)
-    
-    # 3. Calculate the success rate
-    success_list.append(1 if result["primary_decision"] == "ACCEPT" else 0)
-    
-    # 4. Constraint violation
-    violation_list.append(1 if max_interf_pred > primary_I_max else 0)
-
-    csv_writer.writerow([
-        i + 1, rate_true, rate_pred,
-        rate_true_primary, rate_pred_primary,
-        max_interf_true, max_interf_pred, violation_list[i],
-        result["iteration"], result["primary_decision"], sum(true_p2), sum(pred_p2)
-    ])
-
-    print(f"Sample {i+1}/{len(test)} | True Rate: {rate_true} | Pred Rate: {rate_pred} | Pred Interf: {max_interf_pred:.1f}")
-    print(f"True P2: {true_p2}")
-    print(f"pred P2: {result['P2']}")
-
-csv_file.close()
-
-metrics_path = os.path.join(RESULT_DIR, "metrics.txt")
-save_file(metrics_path)
-
-print(f"System Benchmark Before attack:\n")
-print(f"Average Secondary Rate (True): {np.mean(se_true_list):.2f}")
-print(f"Average Secondary Rate (Predicted): {np.mean(se_pred_list):.2f}")
-print(f"Average Interference (Predicted): {np.mean(interf_pred_list):.2f}")
-print(f"Max Interference (Predicted): {np.max(interf_pred_list):.2f}")
-print(f"Efficiency: {np.mean(success_list):.0%}")
-print(f"Constraint Violations: {np.sum(violation_list):.0%}")
-
-# --- ROLLING MEDIAN PLOTTING BLOCK ---
-if len(test) > 0:
-    # 1. Load data into a Pandas DataFrame for easy rolling calculations
-    df = pd.DataFrame({
-        'Sample': range(1, len(test) + 1),
-        'se_pred': se_pred_list,
-        'se_true': se_true_list,
-        'se_pred_primary': se_pred_list_primary,
-        'se_true_primary': se_true_list_primary,
-        'interf_pred': interf_pred_list,
-        'interf_true': interf_true_list
-    })
-
-    window_size = 5
-
-    # 2. Calculate rolling medians
-    # min_periods=1 ensures it plots immediately from Sample 1 without returning NaN for the first 4 samples
-    df['se_pred_roll'] = df['se_pred'].rolling(window=window_size, min_periods=1).median()
-    df['se_true_roll'] = df['se_true'].rolling(window=window_size, min_periods=1).median()
-    
-    df['se_pred_primary_roll'] = df['se_pred_primary'].rolling(window=window_size, min_periods=1).median()
-    df['se_true_primary_roll'] = df['se_true_primary'].rolling(window=window_size, min_periods=1).median()
-    
-    df['interf_pred_roll'] = df['interf_pred'].rolling(window=window_size, min_periods=1).median()
-    df['interf_true_roll'] = df['interf_true'].rolling(window=window_size, min_periods=1).median()
-
-    # Create tick marks for every 10 samples so the x-axis isn't overcrowded
-    x_ticks = range(0, len(test) + 1, 10)
-    if x_ticks[0] == 0:
-        x_ticks = list(x_ticks)[1:] # start at 10
-
-    # PLOT 1: Secondary Rate
-    plt.figure(figsize=(10, 5))
-    plt.plot(df['Sample'], df['se_true_roll'], label='True Optimal Secondary Rate', color='blue', linestyle='--', linewidth=2)
-    plt.plot(df['Sample'], df['se_pred_roll'], label='LLM Agent Secondary Rate', color='red', linestyle='-', linewidth=2)
-    plt.xlabel('Test Sample Index', fontsize=11)
-    plt.ylabel(f'Rolling Median Secondary Rate (w={window_size})', fontsize=11)
-    plt.xticks(x_ticks)
-    plt.legend(fontsize=11)
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(RESULT_DIR, "normal_secondary_rate_rolling_median.png"), dpi=300, bbox_inches="tight")
-
-    # PLOT 2: Primary Rate
-    plt.figure(figsize=(10, 5))
-    plt.plot(df['Sample'], df['se_true_primary_roll'], label='True Optimal Primary Rate', color='blue', linestyle='--', linewidth=2)
-    plt.plot(df['Sample'], df['se_pred_primary_roll'], label='LLM Agent Primary Rate', color='red', linestyle='-', linewidth=2)
-    plt.xlabel('Test Sample Index', fontsize=11)
-    plt.ylabel(f'Rolling Median Primary Rate (w={window_size})', fontsize=11)
-    plt.xticks(x_ticks)
-    plt.legend(fontsize=11)
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(RESULT_DIR, "normal_primary_rate_rolling_media.png"), dpi=300, bbox_inches="tight")
-
-    # PLOT 3: Interference
-    plt.figure(figsize=(10, 5))
-    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
-    plt.plot(df['Sample'], df['interf_true_roll'], label='True Optimal Interference', color='blue', linestyle='--', linewidth=2)
-    plt.plot(df['Sample'], df['interf_pred_roll'], label='LLM Agent Interference', color='red', linestyle='-', linewidth=2)
-    plt.xlabel('Test Sample Index', fontsize=11)
-    plt.ylabel(f'Rolling Median Max Interference (w={window_size})', fontsize=11)
-    plt.xticks(x_ticks)
-    plt.legend(fontsize=11, loc='upper right')
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(RESULT_DIR, "normal_interference_rolling_median.png"), dpi=300, bbox_inches="tight")
-    
-    plt.show()
-else:
-    print("No test samples to plot.")
