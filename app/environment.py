@@ -26,7 +26,7 @@ primary_I_max = 1000
 
 
 primary_transmitter = [80, 80]
-secondary_transmitter = [70, 70]
+secondary_transmitter = [20, 20]
 
 def get_mcs_threshold(sinr_db):
     """Finds the minimum required SINR (dB) for the current state."""
@@ -282,8 +282,8 @@ def gen_channels(length):
             continue
         
         allowed_p2 = int(math.floor(min(p2_limits)))
-        # if allowed_p2 < M:
-        #     continue
+        if allowed_p2 < M:
+            continue
 
         # Secondary's ground-truth allocation: unchanged, still knapsack-optimal
         # over the (now correctly derived) allowed_p2 budget.
