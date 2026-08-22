@@ -252,8 +252,8 @@ def gen_channels(length):
         # secondary can tolerate. This is the genuine, standalone use of
         # secondary_I_max now -- a real constraint check, not a budget generator.
         allowed_p1_ceiling = secondary_I_max / max(cross_h_secondary)
-        # if sum(P1_dist) > allowed_p1_ceiling:
-        #     continue
+        if sum(P1_dist) > allowed_p1_ceiling:
+            continue
 
         # Reject the sample if ANY primary receiver fails to clear the lowest MCS
         # tier at baseline (P2=0) -- kept as a safety net; should always pass by
@@ -282,8 +282,8 @@ def gen_channels(length):
             continue
         
         allowed_p2 = int(math.floor(min(p2_limits)))
-        # if allowed_p2 < M:
-        #     continue
+        if allowed_p2 < M:
+            continue
 
         # Secondary's ground-truth allocation: unchanged, still knapsack-optimal
         # over the (now correctly derived) allowed_p2 budget.
@@ -300,5 +300,5 @@ def gen_channels(length):
 #     test = data[90:]
 
 data = gen_channels(190)
-train = data[:70]
+train = data[:90]
 test = data[90:]
