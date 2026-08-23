@@ -143,7 +143,7 @@ for i in range(len(test)):
         pred_sinr_db = 10 * math.log10(pred_sinr_linear) if pred_sinr_linear > 0 else -999
         
         # 3. Calculate margin (how close the LLM is to breaking the primary receiver)
-        margin_to_cliff = pred_sinr_db - target_th
+        margin_to_cliff = pred_sinr_db - true_sinr_db
         
         print(f"  RX {j+1} | Target Cliff: {target_th:>5.2f} dB | True SINR: {true_sinr_db:>5.2f} dB | Pred SINR: {pred_sinr_db:>5.2f} dB | Margin: {margin_to_cliff:>6.2f} dB")
         
