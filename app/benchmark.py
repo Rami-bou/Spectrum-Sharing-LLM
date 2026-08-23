@@ -123,7 +123,7 @@ for i in range(len(test)):
     result = app.invoke(initial_state)
 
     pred_p2 = result['P2']
-    
+
     for j in range(len(direct_h_prim)):
         p1_val = true_p1[j] if isinstance(true_p1, (list, np.ndarray)) else true_p1
         signal = p1_val * direct_h_prim[j]
@@ -254,82 +254,137 @@ print(f"Constraint Violations: {np.sum(violation_list):.0%}")
 
 # Only attempt to plot if there are enough test samples for binning
 if len(test) > 0:
-    bin_size = 5
-    # Recalculate num_bins to ensure it's at least 1 if there's data, or correctly reflects the number of bins
-    num_bins = (len(test) + bin_size - 1) // bin_size
-    # Recalculate bin_x based on the corrected num_bins
-    bin_x = [i * bin_size for i in range(1, num_bins + 1)]
-    # The binned lists are already calculated correctly based on len(se_pred_list) and bin_size
-    binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
-    binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
+    # Create an index for every individual test sample (1-based index)
+    x = list(range(1, len(test) + 1))
 
-    binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
-    binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
-
-    binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
-    binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
-
+    # --- 1. Secondary Rate Plot (Scatter) ---
     plt.figure(figsize=(10, 5))
-    plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
-    plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+    plt.scatter(x, se_true_list, label='True Optimal Secondary Rate', color='blue', alpha=0.7, marker='o', s=30)
+    plt.scatter(x, se_pred_list, label='LLM Agent Secondary Rate', color='red', alpha=0.7, marker='s', s=30)
 
-    # plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
     plt.xlabel('Test Sample Index', fontsize=11)
-    plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
-    plt.xticks(bin_x)
+    plt.ylabel('Secondary Rate (Mbps)', fontsize=11)
     plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
     plt.savefig(
-    os.path.join(
-    RESULT_DIR,
-    "secondary_rate_csi_pois.png"
-    ),
-    dpi=300,
-    bbox_inches="tight"
+        os.path.join(RESULT_DIR, "secondary_rate_csi_pois.png"),
+        dpi=300,
+        bbox_inches="tight"
     )
 
+    # --- 2. Primary Rate Plot (Scatter) ---
     plt.figure(figsize=(10, 5))
-    plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
-    plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
-    # plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.scatter(x, se_true_list_primary, label='True Optimal Primary Rate', color='blue', alpha=0.7, marker='o', s=30)
+    plt.scatter(x, se_pred_list_primary, label='LLM Agent Primary Rate', color='red', alpha=0.7, marker='s', s=30)
+
     plt.xlabel('Test Sample Index', fontsize=11)
-    plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
-    plt.xticks(bin_x)
+    plt.ylabel('Primary Rate (Mbps)', fontsize=11)
     plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
     plt.savefig(
-    os.path.join(
-    RESULT_DIR,
-    "attack_primary_rate_crash.png"
-    ),
-    dpi=300,
-    bbox_inches="tight"
+        os.path.join(RESULT_DIR, "attack_primary_rate_crash.png"),
+        dpi=300,
+        bbox_inches="tight"
     )
 
+    # --- 3. Interference Plot (Scatter) ---
     plt.figure(figsize=(10, 5))
-    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
-    plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
-    plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
-    # plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
+    plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (I_max={primary_I_max})')
+    plt.scatter(x, interf_true_list, label='True Optimal Interference', color='blue', alpha=0.7, marker='o', s=30)
+    plt.scatter(x, interf_pred_list, label='LLM Agent Interference', color='red', alpha=0.7, marker='x', s=40)
+
     plt.xlabel('Test Sample Index', fontsize=11)
-    plt.ylabel('Average Max Interference Injected', fontsize=11)
-    plt.xticks(bin_x)
+    plt.ylabel('Max Interference Injected', fontsize=11)
     plt.legend(fontsize=11, loc='upper right')
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.tight_layout()
     plt.savefig(
-    os.path.join(
-    RESULT_DIR,
-    "attack_interference_impact.png"
-    ),
-    dpi=300,
-    bbox_inches="tight"
+        os.path.join(RESULT_DIR, "attack_interference_impact.png"),
+        dpi=300,
+        bbox_inches="tight"
     )
     plt.show()
 else:
-    print("No test samples to plot.") 
+    print("No test samples to plot.")
+# if len(test) > 0:
+#     bin_size = 5
+#     # Recalculate num_bins to ensure it's at least 1 if there's data, or correctly reflects the number of bins
+#     num_bins = (len(test) + bin_size - 1) // bin_size
+#     # Recalculate bin_x based on the corrected num_bins
+#     bin_x = [i * bin_size for i in range(1, num_bins + 1)]
+#     # The binned lists are already calculated correctly based on len(se_pred_list) and bin_size
+#     binned_se_pred = [np.mean(se_pred_list[i : i + bin_size]) for i in range(0, len(se_pred_list), bin_size)]
+#     binned_se_true = [np.mean(se_true_list[i : i + bin_size]) for i in range(0, len(se_true_list), bin_size)]
+
+#     binned_se_pred_primary = [np.mean(se_pred_list_primary[i : i + bin_size]) for i in range(0, len(se_pred_list_primary), bin_size)]
+#     binned_se_true_primary = [np.mean(se_true_list_primary[i : i + bin_size]) for i in range(0, len(se_true_list_primary), bin_size)]
+
+#     binned_interf_pred = [np.mean(interf_pred_list[i : i + bin_size]) for i in range(0, len(interf_pred_list), bin_size)]
+#     binned_interf_true = [np.mean(interf_true_list[i : i + bin_size]) for i in range(0, len(interf_true_list), bin_size)]
+
+#     plt.figure(figsize=(10, 5))
+#     plt.plot(bin_x, binned_se_true, label='True Optimal Secondary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+#     plt.plot(bin_x, binned_se_pred, label='LLM Agent Secondary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+
+#     # plt.title('Secondary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+#     plt.xlabel('Test Sample Index', fontsize=11)
+#     plt.ylabel('Average Secondary Rate (Mbps)', fontsize=11)
+#     plt.xticks(bin_x)
+#     plt.legend(fontsize=11)
+#     plt.grid(True, linestyle=':', alpha=0.7)
+#     plt.tight_layout()
+#     plt.savefig(
+#     os.path.join(
+#     RESULT_DIR,
+#     "secondary_rate_csi_pois.png"
+#     ),
+#     dpi=300,
+#     bbox_inches="tight"
+#     )
+
+#     plt.figure(figsize=(10, 5))
+#     plt.plot(bin_x, binned_se_true_primary, label='True Optimal Primary Rate', color='blue', linestyle='--', marker='o', linewidth=2)
+#     plt.plot(bin_x, binned_se_pred_primary, label='LLM Agent Primary Rate', color='red', linestyle='-', marker='s', linewidth=2)
+#     # plt.title('Primary Network Sum Rate (Averaged Every 5 Test Samples)', fontsize=13)
+#     plt.xlabel('Test Sample Index', fontsize=11)
+#     plt.ylabel('Average Primary Rate (Mbps)', fontsize=11)
+#     plt.xticks(bin_x)
+#     plt.legend(fontsize=11)
+#     plt.grid(True, linestyle=':', alpha=0.7)
+#     plt.tight_layout()
+#     plt.savefig(
+#     os.path.join(
+#     RESULT_DIR,
+#     "attack_primary_rate_crash.png"
+#     ),
+#     dpi=300,
+#     bbox_inches="tight"
+#     )
+
+#     plt.figure(figsize=(10, 5))
+#     plt.axhline(y=primary_I_max, color='black', linestyle='-', linewidth=2, label=f'Primary Interference Limit (${{I_{{max}}}}={primary_I_max}$)')
+#     plt.plot(bin_x, binned_interf_true, label='True Optimal Interference', color='blue', linestyle='--', marker='o', linewidth=2)
+#     plt.plot(bin_x, binned_interf_pred, label='LLM Agent Interference', color='red', linestyle='-', marker='x', linewidth=2, markersize=8)
+#     # plt.title('Primary Network Protection: Caused Interference (Averaged Every 5 Test Samples)', fontsize=13)
+#     plt.xlabel('Test Sample Index', fontsize=11)
+#     plt.ylabel('Average Max Interference Injected', fontsize=11)
+#     plt.xticks(bin_x)
+#     plt.legend(fontsize=11, loc='upper right')
+#     plt.grid(True, linestyle=':', alpha=0.7)
+#     plt.tight_layout()
+#     plt.savefig(
+#     os.path.join(
+#     RESULT_DIR,
+#     "attack_interference_impact.png"
+#     ),
+#     dpi=300,
+#     bbox_inches="tight"
+#     )
+#     plt.show()
+# else:
+#     print("No test samples to plot.") 
 
 # import os
 # import csv
