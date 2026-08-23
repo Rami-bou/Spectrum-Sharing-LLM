@@ -26,7 +26,7 @@ primary_I_max = 1000
 
 
 primary_transmitter = [80, 80]
-# secondary_transmitter = [70, 70]
+secondary_transmitter = [70, 70]
 
 def get_mcs_threshold(sinr_db):
     """Finds the minimum required SINR (dB) for the current state."""
@@ -176,9 +176,9 @@ def _channel_gain(distance):
     return max(h * scale_factor, 1e-6)
 
 
-def gen_channels(length, pos):
+def gen_channels(length):
 
-    secondary_transmitter = pos
+    # secondary_transmitter = pos
     while len(data) < length:
         # Primary receivers: bounded cell around their own TX (10-35m),
         # kept away from the secondary transmitter's territory.
@@ -293,12 +293,12 @@ def gen_channels(length, pos):
 
     return data
 
-positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [70, 70]]
-for pos in positions:
-    data = gen_channels(190, pos)
-    train = data[:70]
-    test = data[90:]
+# positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [70, 70]]
+# for pos in positions:
+#     data = gen_channels(190, pos)
+#     train = data[:70]
+#     test = data[90:]
 
-# data = gen_channels(190)
-# train = data[:70]
-# test = data[122:123]
+data = gen_channels(190)
+train = data[:70]
+test = data[122:123]
