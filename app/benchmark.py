@@ -113,6 +113,8 @@ for i in range(len(test)):
     result = app.invoke(initial_state)
 
     pred_p2 = result['P2']
+    
+    print(f"If {test[i][0]} {test[i][1]} {test[i][2]} {test[i][3]} then pred {pred_p2}, true {test[i][5]}")
 
     # margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
     # margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
