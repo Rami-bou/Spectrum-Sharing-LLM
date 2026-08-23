@@ -296,7 +296,8 @@ from environment import (
     primary_I_max,
     calculate_secondary_discrete_rate,
     calculate_primary_discrete_rate,
-    M
+    M,
+    get_mcs_threshold
 )
 from graph import app
 
@@ -371,10 +372,10 @@ for pos in positions:
         result = app.invoke(initial_state)
         pred_p2 = result["P2"]
 
-    print(f"If {test[i][0]} {test[i][1]} {test[i][2]} {test[i][3]} then pred {pred_p2}, true {test[i][5]}")
+    print(f"If {sample[0]} {sample[1]} {sample[2]} {sample[3]} then pred {pred_p2}, true {sample[5]}")
     
     for j in range(3):
-        signal = test[i][4] * test[i][0]
+        signal = sample[4] * sample[0]
             
         # Baseline SINR in dB (when P2 = 0)
         baseline_sinr_db = 10 * math.log10(signal)
