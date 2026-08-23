@@ -84,6 +84,16 @@ csv_writer.writerow([
 "TrueInterference", "PredInterference", "Violation", "Rounds", "Decision", "TrueP2", "PredP2"
 ])
 
+# to see the clifffffffffffff
+sinr_csv_path = os.path.join(RESULT_DIR, "sinr_analysis.csv")
+sinr_csv_file = open(sinr_csv_path, "w", newline="")
+sinr_writer = csv.writer(sinr_csv_file)
+sinr_writer.writerow([
+    "Sample", "Receiver", "Target_Cliff_dB", "Baseline_SINR_dB",
+    "True_SINR_dB", "True_Margin_dB", "Pred_SINR_dB", "Pred_Margin_dB",
+    "True_P2_Sum", "Pred_P2_Sum", "Crash_Flag"
+])
+
 print(f"\nStarting Benchmark over {len(test)} Test Samples...")
 
 for i in range(len(test)):
@@ -113,6 +123,44 @@ for i in range(len(test)):
     result = app.invoke(initial_state)
 
     pred_p2 = result['P2']
+    
+    for j in range(len(direct_h_prim)):
+        p1_val = true_p1[j] if isinstance(true_p1, (list, np.ndarray)) else true_p1
+        signal = p1_val * direct_h_prim[j]
+        
+        if signal <= 0:
+            continue
+            
+        baseline_sinr_db = 10 * math.log10(signal)
+        target_th = get_mcs_threshold(baseline_sinr_db)
+        
+        # True SINR & Margin
+        true_interf = sum(true_p2) * cross_h_prim[j]
+        true_sinr_lin = signal / (1.0 + true_interf)
+        true_sinr_db = 10 * math.log10(true_sinr_lin) if true_sinr_lin > 0 else -999.0
+        true_margin = true_sinr_db - target_th
+        
+        # Predicted SINR & Margin
+        pred_interf = sum(pred_p2) * cross_h_prim[j]
+        pred_sinr_lin = signal / (1.0 + pred_interf)
+        pred_sinr_db = 10 * math.log10(pred_sinr_lin) if pred_sinr_lin > 0 else -999.0
+        pred_margin = pred_sinr_db - target_th
+        
+        crash_flag = 1 if pred_margin < 0 else 0
+        
+        sinr_writer.writerow([
+            i + 1,
+            j + 1,
+            round(target_th, 2),
+            round(baseline_sinr_db, 2),
+            round(true_sinr_db, 2),
+            round(true_margin, 2),
+            round(pred_sinr_db, 2),
+            round(pred_margin, 2),
+            sum(true_p2),
+            sum(pred_p2),
+            crash_flag
+        ])
 
     print(f"If {test[i][0]} {test[i][1]} {test[i][2]} {test[i][3]} then pred {pred_p2}, true {test[i][5]}")
 
