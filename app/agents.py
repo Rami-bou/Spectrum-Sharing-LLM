@@ -303,7 +303,7 @@ def secondary(state:GraphState) -> GraphState:
 
         print(f"Delta: {resp.step}")
 
-        P2_new = int(max(1, total_p2 + resp.step))
+        P2_new = int(max(0, total_p2 + resp.step))
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
         # state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]
