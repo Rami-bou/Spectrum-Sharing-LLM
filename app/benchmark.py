@@ -347,13 +347,13 @@ for pos in positions:
     violation_list = []
     success_list = []
 
-    for i, sample in enumerate(test_samples):
-        direct_h_prim = sample[0]
-        direct_h_sec = sample[1]
-        cross_h_prim = sample[2]
-        cross_h_sec = sample[3]
-        true_p1 = sample[4]
-        true_p2 = sample[5]
+    for i, test in enumerate(test_samples):
+        direct_h_prim = test[0]
+        direct_h_sec = test[1]
+        cross_h_prim = test[2]
+        cross_h_sec = test[3]
+        true_p1 = test[4]
+        true_p2 = test[5]
 
         initial_state = {
             "direct_primary_channels": direct_h_prim,
@@ -372,43 +372,43 @@ for pos in positions:
         result = app.invoke(initial_state)
         pred_p2 = result["P2"]
 
-    print(f"If {sample[0]} {sample[1]} {sample[2]} {sample[3]} then pred {pred_p2}, true {sample[5]}")
-    
-    for j in range(3):
-        signal = sample[4] * sample[0]
-            
-        # Baseline SINR in dB (when P2 = 0)
-        baseline_sinr_db = 10 * math.log10(signal)
-        
-        # Target MCS cliff threshold for this receiver
-        target_th = get_mcs_threshold(baseline_sinr_db)
-        if target_th < 0:
-            continue
-            
-        # Actual SINR in dB with current P2 proposal
-        interference = sum(test[i][5]) * test[i][2]
-        actual_sinr_linear = signal / (1.0 + interference)
-        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-        
-        print(f"SINR by true: {actual_sinr_db}")
+        print(f"If {test[i][0]} {test[i][1]} {test[i][2]} {test[i][3]} then pred {pred_p2}, true {test[i][5]}")
 
-    for j in range(3):
-        signal = test[i][4] * test[i][0]
+        for j in range(3):
+            signal = test[i][4] * test[i][0]
+                
+            # Baseline SINR in dB (when P2 = 0)
+            baseline_sinr_db = 10 * math.log10(signal)
             
-        # Baseline SINR in dB (when P2 = 0)
-        baseline_sinr_db = 10 * math.log10(signal)
-        
-        # Target MCS cliff threshold for this receiver
-        target_th = get_mcs_threshold(baseline_sinr_db)
-        if target_th < 0:
-            continue
+            # Target MCS cliff threshold for this receiver
+            target_th = get_mcs_threshold(baseline_sinr_db)
+            if target_th < 0:
+                continue
+                
+            # Actual SINR in dB with current P2 proposal
+            interference = sum(test[i][5]) * test[i][2]
+            actual_sinr_linear = signal / (1.0 + interference)
+            actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
             
-        # Actual SINR in dB with current P2 proposal
-        interference = sum(pred_p2) * test[i][2]
-        actual_sinr_linear = signal / (1.0 + interference)
-        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-        
-        print(f"SINR by pred: {actual_sinr_db}")
+            print(f"SINR by true: {actual_sinr_db}")
+
+        for j in range(3):
+            signal = test[i][4] * test[i][0]
+                
+            # Baseline SINR in dB (when P2 = 0)
+            baseline_sinr_db = 10 * math.log10(signal)
+            
+            # Target MCS cliff threshold for this receiver
+            target_th = get_mcs_threshold(baseline_sinr_db)
+            if target_th < 0:
+                continue
+                
+            # Actual SINR in dB with current P2 proposal
+            interference = sum(pred_p2) * test[i][2]
+            actual_sinr_linear = signal / (1.0 + interference)
+            actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
+            
+            print(f"SINR by pred: {actual_sinr_db}")
 
         rate_pred = calculate_secondary_discrete_rate(true_p1, pred_p2, direct_h_sec, cross_h_sec)
         rate_true = calculate_secondary_discrete_rate(true_p1, true_p2, direct_h_sec, cross_h_sec)
