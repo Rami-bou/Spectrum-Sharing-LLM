@@ -133,12 +133,12 @@ for i in range(len(test)):
             continue
             
         # 1. Actual SINR with True Optimal P2
-        true_interference = true_p2[j] * cross_h_prim[j]
+        true_interference = sum(true_p2) * cross_h_prim[j]
         true_sinr_linear = signal / (1.0 + true_interference)
         true_sinr_db = 10 * math.log10(true_sinr_linear) if true_sinr_linear > 0 else -999
         
         # 2. Actual SINR with LLM Predicted P2
-        pred_interference = pred_p2[j] * cross_h_prim[j]
+        pred_interference = sum(pred_p2) * cross_h_prim[j]
         pred_sinr_linear = signal / (1.0 + pred_interference)
         pred_sinr_db = 10 * math.log10(pred_sinr_linear) if pred_sinr_linear > 0 else -999
         

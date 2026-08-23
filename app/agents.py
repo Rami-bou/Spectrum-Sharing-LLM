@@ -102,8 +102,8 @@ def primary(state: GraphState) -> GraphState:
             continue
             
         # Actual SINR in dB with current P2 proposal
-        interference = state['P2'] * state['cross_primary_channels'][j]
-        # interference = total_p2 * state['cross_primary_channels'][j]
+        # interference = state['P2'] * state['cross_primary_channels'][j]
+        interference = total_p2 * state['cross_primary_channels'][j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
         
