@@ -176,7 +176,7 @@ def _channel_gain(distance):
     return max(h * scale_factor, 1e-6)
 
 
-def gen_channels(length, pos):
+def gen_channels(length):
 
     # secondary_transmitter = pos
     while len(data) < length:
