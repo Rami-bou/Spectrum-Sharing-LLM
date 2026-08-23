@@ -274,6 +274,7 @@ def gen_channels(length):
             target_th = get_mcs_threshold(baseline_sinr_db)
             # the minimum SINR linear that still achieves the same MCS tier as baseline (P2=0)
             min_linear_sinr = 10 ** (target_th / 10.0)
+            # to get the max inter and -1 is noise (just inverse the equation) signal/1+inter > min_linear_sinr
             max_interference = (signal / min_linear_sinr) - 1.0
             if max_interference > 0 and cross_h_primary[j] > 0:
                 p2_limits.append(max_interference / cross_h_primary[j])
@@ -293,12 +294,12 @@ def gen_channels(length):
 
     return data
 
-# positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [70, 70]]
-# for pos in positions:
-#     data = gen_channels(190, pos)
-#     train = data[:70]
-#     test = data[90:]
+positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [70, 70]]
+for pos in positions:
+    data = gen_channels(190, pos)
+    train = data[:70]
+    test = data[90:]
 
-data = gen_channels(190)
-train = data[:70]
-test = data[90:]
+# data = gen_channels(190)
+# train = data[:70]
+# test = data[90:]
