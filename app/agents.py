@@ -102,7 +102,8 @@ def primary(state: GraphState) -> GraphState:
             continue
             
         # Actual SINR in dB with current P2 proposal
-        interference = total_p2 * state['cross_primary_channels'][j]
+        interference = state['P2'] * state['cross_primary_channels'][j]
+        # interference = total_p2 * state['cross_primary_channels'][j]
         actual_sinr_linear = signal / (1.0 + interference)
         actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
         
@@ -303,7 +304,7 @@ def secondary(state:GraphState) -> GraphState:
 
         print(f"Delta: {resp.step}")
 
-        P2_new = int(max(0, total_p2 + resp.step))
+        P2_new = int(max(1, total_p2 + resp.step))
         inverses = [1.0 / v for v in state['direct_secondary_channels']]
         sum_inverses = sum(inverses)
         # state['P2'] = [int(round((inv / sum_inverses) * P2_new)) for inv in inverses]

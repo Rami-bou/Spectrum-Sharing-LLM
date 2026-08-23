@@ -116,8 +116,13 @@ for i in range(len(test)):
 
     print(f"If {test[i][0]} {test[i][1]} {test[i][2]} {test[i][3]} then pred {pred_p2}, true {test[i][5]}")
 
-    for j in range(3):
-        signal = test[i][4] * test[i][0]
+    for j in range(len(direct_h_prim)):
+        # Handle whether true_p1 is a list/vector or a single scalar
+        p1_val = true_p1[j] if isinstance(true_p1, (list, np.ndarray)) else true_p1
+        signal = p1_val * direct_h_prim[j]
+        
+        if signal <= 0:
+            continue
             
         # Baseline SINR in dB (when P2 = 0)
         baseline_sinr_db = 10 * math.log10(signal)
@@ -127,30 +132,25 @@ for i in range(len(test)):
         if target_th < 0:
             continue
             
-        # Actual SINR in dB with current P2 proposal
-        interference = sum(test[i][5]) * test[i][2]
-        actual_sinr_linear = signal / (1.0 + interference)
-        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
+        # 1. Actual SINR with True Optimal P2
+        true_interference = true_p2[j] * cross_h_prim[j]
+        true_sinr_linear = signal / (1.0 + true_interference)
+        true_sinr_db = 10 * math.log10(true_sinr_linear) if true_sinr_linear > 0 else -999
         
-        print(f"SINR by true: {actual_sinr_db}")
-
-    for j in range(3):
-        signal = test[i][4] * test[i][0]
+        # 2. Actual SINR with LLM Predicted P2
+        pred_interference = pred_p2[j] * cross_h_prim[j]
+        pred_sinr_linear = signal / (1.0 + pred_interference)
+        pred_sinr_db = 10 * math.log10(pred_sinr_linear) if pred_sinr_linear > 0 else -999
+        
+        # 3. Calculate margin (how close the LLM is to breaking the primary receiver)
+        margin_to_cliff = pred_sinr_db - target_th
+        
+        print(f"  RX {j+1} | Target Cliff: {target_th:>5.2f} dB | True SINR: {true_sinr_db:>5.2f} dB | Pred SINR: {pred_sinr_db:>5.2f} dB | Margin: {margin_to_cliff:>6.2f} dB")
+        
+        if margin_to_cliff < 0:
+            print(f"    >>> CRASH DETECTED: LLM interference dropped RX {j+1} below the MCS threshold!")
             
-        # Baseline SINR in dB (when P2 = 0)
-        baseline_sinr_db = 10 * math.log10(signal)
-        
-        # Target MCS cliff threshold for this receiver
-        target_th = get_mcs_threshold(baseline_sinr_db)
-        if target_th < 0:
-            continue
-            
-        # Actual SINR in dB with current P2 proposal
-        interference = sum(pred_p2) * test[i][2]
-        actual_sinr_linear = signal / (1.0 + interference)
-        actual_sinr_db = 10 * math.log10(actual_sinr_linear) if actual_sinr_linear > 0 else -999
-        
-        print(f"SINR by pred: {actual_sinr_db}")
+    print("-" * 40)
 
     # margin_believed = compute_worst_margin(true_p1, pred_p2, direct_h_prim, poisoned_cross_h_pri)
     # margin_actual = compute_worst_margin(true_p1, pred_p2, direct_h_prim, cross_h_prim)
