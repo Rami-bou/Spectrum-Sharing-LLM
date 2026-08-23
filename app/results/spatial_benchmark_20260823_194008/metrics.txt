@@ -1,0 +1,46 @@
+============================================================
+SPATIAL BENCHMARK SUMMARY PER POSITION
+============================================================
+
+Position [20, 20]:
+  Secondary Rate (True / Pred) : 132.00 / 121.00 Mbps
+  Primary Rate (True / Pred)   : 450.00 / 442.00 Mbps
+  Interference (True / Pred)   : 166.07 / 139.80
+  Violation Rate               : 0.00 %
+  Negotiation Success Rate     : 60.00 %
+
+Position [30, 30]:
+  Secondary Rate (True / Pred) : 82.00 / 75.50 Mbps
+  Primary Rate (True / Pred)   : 450.00 / 441.00 Mbps
+  Interference (True / Pred)   : 193.98 / 177.58
+  Violation Rate               : 0.00 %
+  Negotiation Success Rate     : 70.00 %
+
+Position [40, 40]:
+  Secondary Rate (True / Pred) : 46.50 / 49.00 Mbps
+  Primary Rate (True / Pred)   : 450.00 / 430.00 Mbps
+  Interference (True / Pred)   : 176.13 / 207.91
+  Violation Rate               : 3.33 %
+  Negotiation Success Rate     : 50.00 %
+
+Position [50, 50]:
+  Secondary Rate (True / Pred) : 21.00 / 24.50 Mbps
+  Primary Rate (True / Pred)   : 450.00 / 425.00 Mbps
+  Interference (True / Pred)   : 198.76 / 235.99
+  Violation Rate               : 0.00 %
+  Negotiation Success Rate     : 30.00 %
+
+Position [60, 60]:
+  Secondary Rate (True / Pred) : 2.50 / 4.50 Mbps
+  Primary Rate (True / Pred)   : 450.00 / 410.00 Mbps
+  Interference (True / Pred)   : 135.64 / 303.97
+  Violation Rate               : 6.67 %
+  Negotiation Success Rate     : 30.00 %
+
+Position [70, 70]:
+  Secondary Rate (True / Pred) : 0.00 / 0.50 Mbps
+  Primary Rate (True / Pred)   : 450.00 / 389.50 Mbps
+  Interference (True / Pred)   : 164.35 / 13762.99
+  Violation Rate               : 10.00 %
+  Negotiation Success Rate     : 10.00 %
+
