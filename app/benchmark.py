@@ -343,7 +343,9 @@ from environment import (
     calculate_secondary_discrete_rate,
     calculate_primary_discrete_rate,
     M,
-    get_mcs_threshold
+    get_mcs_threshold,
+    test,
+    train
 )
 from graph import app
 
@@ -382,7 +384,7 @@ for pos in positions:
     # Clear global environment data list before generating fresh channels for the new location
     environment.data.clear()
     dataset = gen_channels(100, pos)
-    test_samples = dataset[70:]  # Evaluation subset (30 test samples per position)
+    test = dataset[70:]  # Evaluation subset (30 test samples per position)
 
     se_pred_list = []
     se_true_list = []
@@ -393,13 +395,13 @@ for pos in positions:
     violation_list = []
     success_list = []
 
-    for i, test in enumerate(test_samples):
-        direct_h_prim = test[0]
-        direct_h_sec = test[1]
-        cross_h_prim = test[2]
-        cross_h_sec = test[3]
-        true_p1 = test[4]
-        true_p2 = test[5]
+    for i, t in enumerate(test):
+        direct_h_prim = t[0]
+        direct_h_sec = t[1]
+        cross_h_prim = t[2]
+        cross_h_sec = t[3]
+        true_p1 = t[4]
+        true_p2 = t[5]
 
         initial_state = {
             "direct_primary_channels": direct_h_prim,
