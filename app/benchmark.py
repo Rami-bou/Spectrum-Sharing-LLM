@@ -216,9 +216,10 @@ for i in range(len(test)):
 
 
     # 2. Calculate Worst-Case Caused Interference on Primary Receivers
+    for j in range(len(direct_h_prim)):
+        max_interf_pred = sum(pred_p2) * cross_h_prim[j]
+        max_interf_true = sum(true_p2) * cross_h_prim[j]
 
-    max_interf_pred = sum(pred_p2) * max(cross_h_prim)
-    max_interf_true = sum(true_p2) * max(cross_h_prim)
     interf_pred_list.append(max_interf_pred)
     interf_true_list.append(max_interf_true)
     # 3. Calculate the sucess rate

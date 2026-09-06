@@ -284,8 +284,8 @@ def gen_channels(length):
             continue
         
         allowed_p2 = int(math.floor(min(p2_limits)))
-        # if allowed_p2 < M:
-        #     continue
+        if allowed_p2 < M:
+            continue
 
         # Secondary's ground-truth allocation: unchanged, still knapsack-optimal
         # over the (now correctly derived) allowed_p2 budget.
@@ -303,4 +303,4 @@ def gen_channels(length):
 
 data = gen_channels(190)
 train = data[:70]
-test = data[90:]
+test = data[90:100]
