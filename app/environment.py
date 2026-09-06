@@ -244,7 +244,8 @@ def gen_channels(length):
         # tier-reachability, knapsack behavior, negotiation dynamics).
         P1_dist = []
         for j in range(N):
-            target_db = MCS[-1][0] + random.uniform(18, 28)
+            # target_db = MCS[-1][0] + random.uniform(18, 28)
+            target_db = MCS[-1][0] + random.uniform(1, 10)
             target_lin = 10 ** (target_db / 10.0)
             P1_dist.append(max(1, int(round(target_lin / direct_h_primary[j]))))
 
