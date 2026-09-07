@@ -253,7 +253,7 @@ def gen_channels(length, pos):
         # secondary can tolerate. This is the genuine, standalone use of
         # secondary_I_max now -- a real constraint check, not a budget generator.
         allowed_p1_ceiling = secondary_I_max / max(cross_h_secondary)
-        if secondary_transmitter[0] < 60:
+        if secondary_transmitter[0] < 50:
             if sum(P1_dist) > allowed_p1_ceiling:
                 continue
 
@@ -285,7 +285,7 @@ def gen_channels(length, pos):
             continue
         
         allowed_p2 = int(math.floor(min(p2_limits)))
-        if secondary_transmitter[0] < 60:
+        if secondary_transmitter[0] < 50:
             if allowed_p2 < M:
                 continue
 
