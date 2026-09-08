@@ -294,8 +294,8 @@ def _channel_gain(distance):
 
 #     return data
 
-def gen_channels(length):
-    # secondary_transmitter = pos
+def gen_channels(length, pos):
+    secondary_transmitter = pos
     max_attempts_per_sample = 2000  # this is what actually stops the infinite loop
 
     while len(data) < length:
@@ -390,12 +390,12 @@ def gen_channels(length):
 
     return data
 
-# positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [70, 70]]
-# for pos in positions:
-#     data = gen_channels(190, pos)
-#     train = data[:70]
-#     test = data[90:]
+positions = [[20, 20], [30, 30], [40, 40], [50, 50], [60, 60], [70, 70]]
+for pos in positions:
+    data = gen_channels(190, pos)
+    train = data[:70]
+    test = data[90:]
 
-data = gen_channels(190)
-train = data[:70]
-test = data[90:]
+# data = gen_channels(190)
+# train = data[:70]
+# test = data[90:]
