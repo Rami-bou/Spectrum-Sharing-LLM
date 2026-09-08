@@ -187,7 +187,6 @@ def primary(state: GraphState) -> GraphState:
 
     state['iteration'] += 1
 
-    enforce_write("worst_margin", "primary", worst_margin, state)
     state['worst_margin'] = worst_margin
 
     print(f"[Decision]: {resp.decision} ({resp.severity})")
