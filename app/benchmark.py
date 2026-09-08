@@ -385,9 +385,8 @@ for pos in positions:
     print(f"==================================================")
 
     # Clear global environment data list before generating fresh channels for the new location
-    environment.data.clear()
-    dataset = gen_channels(100, pos)
-    test = dataset[70:]  # Evaluation subset (30 test samples per position)
+    # environment.data.clear()
+    # dataset = gen_channels(100, pos)
 
     se_pred_list = []
     se_true_list = []

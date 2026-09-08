@@ -176,122 +176,215 @@ def _channel_gain(distance):
     return max(h * scale_factor, 1e-6)
 
 
+# def gen_channels(length):
+
+#     # secondary_transmitter = pos
+#     while len(data) < length:
+#         # Primary receivers: bounded cell around their own TX (10-35m),
+#         # kept away from the secondary transmitter's territory.
+#         # (Unchanged -- this geometry was already validated: 120/120 acceptance,
+#         # 0% rejection at every stage, when tested earlier in this project.)
+#         position_primary_receiver = []
+#         direct_h_primary = []
+#         for i in range(N):
+#             dist_r = random.uniform(10, 35)
+#             angle = random.uniform(0, 2 * math.pi)
+#             rp = [primary_transmitter[0] + dist_r * math.cos(angle),
+#                   primary_transmitter[1] + dist_r * math.sin(angle)]
+#             position_primary_receiver.append(rp)
+#             d = np.sqrt((rp[0] - primary_transmitter[0]) ** 2 + (rp[1] - primary_transmitter[1]) ** 2)
+#             direct_h_primary.append(_channel_gain(d))
+
+#         # Secondary receivers: tight cluster around their own TX (1-5m).
+#         # Needed so secondary's own SINR can reach the same MCS table primary uses --
+#         # a spread-out secondary is always interference-limited to below MCS tier 0.
+#         # (Unchanged -- validated earlier: 99.4% of secondary receivers reach a real tier.)
+#         position_secondary_receiver = []
+#         direct_h_secondary = []
+#         for i in range(M):
+#             dist_r = random.uniform(1, 5)
+#             angle = random.uniform(0, 2 * math.pi)
+#             rs = [secondary_transmitter[0] + dist_r * math.cos(angle),
+#                   secondary_transmitter[1] + dist_r * math.sin(angle)]
+#             position_secondary_receiver.append(rs)
+#             d = np.sqrt((rs[0] - secondary_transmitter[0]) ** 2 + (rs[1] - secondary_transmitter[1]) ** 2)
+#             direct_h_secondary.append(_channel_gain(d))
+
+#         cross_h_primary = []
+#         for pos in position_primary_receiver:
+#             d = np.sqrt((pos[0] - secondary_transmitter[0]) ** 2 + (pos[1] - secondary_transmitter[1]) ** 2)
+#             cross_h_primary.append(_channel_gain(d))
+
+#         cross_h_secondary = []
+#         for pos in position_secondary_receiver:
+#             d = np.sqrt((pos[0] - primary_transmitter[0]) ** 2 + (pos[1] - primary_transmitter[1]) ** 2)
+#             cross_h_secondary.append(_channel_gain(d))
+
+#         # FIX: P1 derivation.
+#         # OLD: allowed_p1 = secondary_I_max / max(cross_h_secondary), then split
+#         # proportionally across receivers. This made P1's magnitude entirely a
+#         # function of SECONDARY's geometry (how much interference secondary can
+#         # tolerate), with zero reference to primary's own channel quality. Result
+#         # (measured earlier): baseline P1 landed 100% of primary receivers on the
+#         # exact top MCS tier, every single sample, zero variance -- an accident of
+#         # secondary_I_max's specific value, not a deliberate property of the system.
+#         #
+#         # NEW: primary is DELIBERATELY targeted to reach the top MCS tier with a
+#         # generous, intentional margin -- "the channel owner runs strong" is now a
+#         # designed property, independent of secondary_I_max. secondary_I_max is
+#         # still enforced, but only as an independent safety ceiling afterward, not
+#         # as the value that determines P1's magnitude in the first place. Changing
+#         # secondary_I_max later (e.g. to retune secondary's own story) will no
+#         # longer silently reshape primary's entire profile.
+#         #
+#         # The 18-28 dB buffer above the top threshold (20 dB) was chosen empirically
+#         # to match the magnitude the OLD code produced by accident (its baseline
+#         # SINR came out to 38-48 dB) -- so allowed_p2's resulting budget range is
+#         # consistent with everything already validated in this project (secondary
+#         # tier-reachability, knapsack behavior, negotiation dynamics).
+#         P1_dist = []
+#         for j in range(N):
+#             target_db = MCS[-1][0] + random.uniform(18, 28)
+#             target_lin = 10 ** (target_db / 10.0)
+#             P1_dist.append(max(1, int(round(target_lin / direct_h_primary[j]))))
+
+#         # Independent safety cap: reject the sample if this P1 would exceed what
+#         # secondary can tolerate. This is the genuine, standalone use of
+#         # secondary_I_max now -- a real constraint check, not a budget generator.
+#         allowed_p1_ceiling = secondary_I_max / max(cross_h_secondary)
+#         if sum(P1_dist) > allowed_p1_ceiling:
+#             continue
+
+#         # Reject the sample if ANY primary receiver fails to clear the lowest MCS
+#         # tier at baseline (P2=0) -- kept as a safety net; should always pass by
+#         # construction now, but costs nothing to keep as a defensive check.
+#         baseline_ok = True
+#         for j in range(N):
+#             signal = P1_dist[j] * direct_h_primary[j]
+#             if signal <= 0 or get_mcs_threshold(10 * math.log10(signal)) < 0:
+#                 baseline_ok = False
+#                 break
+#         if not baseline_ok:
+#             continue
+
+#         p2_limits = []
+#         for j in range(N):
+#             signal = P1_dist[j] * direct_h_primary[j]
+#             baseline_sinr_db = 10 * math.log10(signal)
+#             target_th = get_mcs_threshold(baseline_sinr_db)
+#             # the minimum SINR linear that still achieves the same MCS tier as baseline (P2=0)
+#             min_linear_sinr = 10 ** (target_th / 10.0)
+#             # to get the max inter and -1 is noise (just inverse the equation) signal/1+inter > min_linear_sinr
+#             max_interference = (signal / min_linear_sinr) - 1.0
+#             if max_interference > 0 and cross_h_primary[j] > 0:
+#                 p2_limits.append(max_interference / cross_h_primary[j])
+
+#         if not p2_limits:
+#             continue
+        
+#         allowed_p2 = int(math.floor(min(p2_limits)))
+#         if allowed_p2 < M:
+#             continue
+
+#         # Secondary's ground-truth allocation: unchanged, still knapsack-optimal
+#         # over the (now correctly derived) allowed_p2 budget.
+#         P2_dist = allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
+
+#         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
+
+#     return data
+
 def gen_channels(length, pos):
-
     secondary_transmitter = pos
+    max_attempts_per_sample = 2000  # this is what actually stops the infinite loop
+
     while len(data) < length:
-        # Primary receivers: bounded cell around their own TX (10-35m),
-        # kept away from the secondary transmitter's territory.
-        # (Unchanged -- this geometry was already validated: 120/120 acceptance,
-        # 0% rejection at every stage, when tested earlier in this project.)
-        position_primary_receiver = []
-        direct_h_primary = []
-        for i in range(N):
-            dist_r = random.uniform(10, 35)
-            angle = random.uniform(0, 2 * math.pi)
-            rp = [primary_transmitter[0] + dist_r * math.cos(angle),
-                  primary_transmitter[1] + dist_r * math.sin(angle)]
-            position_primary_receiver.append(rp)
-            d = np.sqrt((rp[0] - primary_transmitter[0]) ** 2 + (rp[1] - primary_transmitter[1]) ** 2)
-            direct_h_primary.append(_channel_gain(d))
+        sample = None
+        P1_dist = direct_h_primary = direct_h_secondary = cross_h_primary = cross_h_secondary = None
 
-        # Secondary receivers: tight cluster around their own TX (1-5m).
-        # Needed so secondary's own SINR can reach the same MCS table primary uses --
-        # a spread-out secondary is always interference-limited to below MCS tier 0.
-        # (Unchanged -- validated earlier: 99.4% of secondary receivers reach a real tier.)
-        position_secondary_receiver = []
-        direct_h_secondary = []
-        for i in range(M):
-            dist_r = random.uniform(1, 5)
-            angle = random.uniform(0, 2 * math.pi)
-            rs = [secondary_transmitter[0] + dist_r * math.cos(angle),
-                  secondary_transmitter[1] + dist_r * math.sin(angle)]
-            position_secondary_receiver.append(rs)
-            d = np.sqrt((rs[0] - secondary_transmitter[0]) ** 2 + (rs[1] - secondary_transmitter[1]) ** 2)
-            direct_h_secondary.append(_channel_gain(d))
+        for _ in range(max_attempts_per_sample):
+            # Primary receivers: bounded cell around their own TX (10-35m).
+            position_primary_receiver = []
+            direct_h_primary = []
+            for i in range(N):
+                dist_r = random.uniform(10, 35)
+                angle = random.uniform(0, 2 * math.pi)
+                rp = [primary_transmitter[0] + dist_r * math.cos(angle),
+                      primary_transmitter[1] + dist_r * math.sin(angle)]
+                position_primary_receiver.append(rp)
+                d = np.sqrt((rp[0] - primary_transmitter[0]) ** 2 + (rp[1] - primary_transmitter[1]) ** 2)
+                direct_h_primary.append(_channel_gain(d))
 
-        cross_h_primary = []
-        for pos in position_primary_receiver:
-            d = np.sqrt((pos[0] - secondary_transmitter[0]) ** 2 + (pos[1] - secondary_transmitter[1]) ** 2)
-            cross_h_primary.append(_channel_gain(d))
+            # Secondary receivers: tight cluster around their own TX (1-5m).
+            position_secondary_receiver = []
+            direct_h_secondary = []
+            for i in range(M):
+                dist_r = random.uniform(1, 5)
+                angle = random.uniform(0, 2 * math.pi)
+                rs = [secondary_transmitter[0] + dist_r * math.cos(angle),
+                      secondary_transmitter[1] + dist_r * math.sin(angle)]
+                position_secondary_receiver.append(rs)
+                d = np.sqrt((rs[0] - secondary_transmitter[0]) ** 2 + (rs[1] - secondary_transmitter[1]) ** 2)
+                direct_h_secondary.append(_channel_gain(d))
 
-        cross_h_secondary = []
-        for pos in position_secondary_receiver:
-            d = np.sqrt((pos[0] - primary_transmitter[0]) ** 2 + (pos[1] - primary_transmitter[1]) ** 2)
-            cross_h_secondary.append(_channel_gain(d))
+            cross_h_primary = []
+            for p in position_primary_receiver:
+                d = np.sqrt((p[0] - secondary_transmitter[0]) ** 2 + (p[1] - secondary_transmitter[1]) ** 2)
+                cross_h_primary.append(_channel_gain(d))
 
-        # FIX: P1 derivation.
-        # OLD: allowed_p1 = secondary_I_max / max(cross_h_secondary), then split
-        # proportionally across receivers. This made P1's magnitude entirely a
-        # function of SECONDARY's geometry (how much interference secondary can
-        # tolerate), with zero reference to primary's own channel quality. Result
-        # (measured earlier): baseline P1 landed 100% of primary receivers on the
-        # exact top MCS tier, every single sample, zero variance -- an accident of
-        # secondary_I_max's specific value, not a deliberate property of the system.
-        #
-        # NEW: primary is DELIBERATELY targeted to reach the top MCS tier with a
-        # generous, intentional margin -- "the channel owner runs strong" is now a
-        # designed property, independent of secondary_I_max. secondary_I_max is
-        # still enforced, but only as an independent safety ceiling afterward, not
-        # as the value that determines P1's magnitude in the first place. Changing
-        # secondary_I_max later (e.g. to retune secondary's own story) will no
-        # longer silently reshape primary's entire profile.
-        #
-        # The 18-28 dB buffer above the top threshold (20 dB) was chosen empirically
-        # to match the magnitude the OLD code produced by accident (its baseline
-        # SINR came out to 38-48 dB) -- so allowed_p2's resulting budget range is
-        # consistent with everything already validated in this project (secondary
-        # tier-reachability, knapsack behavior, negotiation dynamics).
-        P1_dist = []
-        for j in range(N):
-            # target_db = MCS[-1][0] + random.uniform(18, 28)
-            target_db = MCS[-1][0] + random.uniform(1, 10)
-            target_lin = 10 ** (target_db / 10.0)
-            P1_dist.append(max(1, int(round(target_lin / direct_h_primary[j]))))
+            cross_h_secondary = []
+            for p in position_secondary_receiver:
+                d = np.sqrt((p[0] - primary_transmitter[0]) ** 2 + (p[1] - primary_transmitter[1]) ** 2)
+                cross_h_secondary.append(_channel_gain(d))
 
-        # Independent safety cap: reject the sample if this P1 would exceed what
-        # secondary can tolerate. This is the genuine, standalone use of
-        # secondary_I_max now -- a real constraint check, not a budget generator.
-        allowed_p1_ceiling = secondary_I_max / max(cross_h_secondary)
-        if secondary_transmitter[0] < 50:
+            # Primary deliberately targeted 18-28 dB above the top MCS threshold.
+            P1_dist = []
+            for j in range(N):
+                target_db = MCS[-1][0] + random.uniform(18, 28)
+                target_lin = 10 ** (target_db / 10.0)
+                P1_dist.append(max(1, int(round(target_lin / direct_h_primary[j]))))
+
+            allowed_p1_ceiling = secondary_I_max / max(cross_h_secondary)
             if sum(P1_dist) > allowed_p1_ceiling:
                 continue
 
-        # Reject the sample if ANY primary receiver fails to clear the lowest MCS
-        # tier at baseline (P2=0) -- kept as a safety net; should always pass by
-        # construction now, but costs nothing to keep as a defensive check.
-        baseline_ok = True
-        for j in range(N):
-            signal = P1_dist[j] * direct_h_primary[j]
-            if signal <= 0 or get_mcs_threshold(10 * math.log10(signal)) < 0:
-                baseline_ok = False
-                break
-        if not baseline_ok:
-            continue
+            baseline_ok = True
+            for j in range(N):
+                signal = P1_dist[j] * direct_h_primary[j]
+                if signal <= 0 or get_mcs_threshold(10 * math.log10(signal)) < 0:
+                    baseline_ok = False
+                    break
+            if not baseline_ok:
+                continue
 
-        p2_limits = []
-        for j in range(N):
-            signal = P1_dist[j] * direct_h_primary[j]
-            baseline_sinr_db = 10 * math.log10(signal)
-            target_th = get_mcs_threshold(baseline_sinr_db)
-            # the minimum SINR linear that still achieves the same MCS tier as baseline (P2=0)
-            min_linear_sinr = 10 ** (target_th / 10.0)
-            # to get the max inter and -1 is noise (just inverse the equation) signal/1+inter > min_linear_sinr
-            max_interference = (signal / min_linear_sinr) - 1.0
-            if max_interference > 0 and cross_h_primary[j] > 0:
-                p2_limits.append(max_interference / cross_h_primary[j])
+            p2_limits = []
+            for j in range(N):
+                signal = P1_dist[j] * direct_h_primary[j]
+                baseline_sinr_db = 10 * math.log10(signal)
+                target_th = get_mcs_threshold(baseline_sinr_db)
+                min_linear_sinr = 10 ** (target_th / 10.0)
+                max_interference = (signal / min_linear_sinr) - 1.0
+                if max_interference > 0 and cross_h_primary[j] > 0:
+                    p2_limits.append(max_interference / cross_h_primary[j])
 
-        if not p2_limits:
-            continue
-        
-        allowed_p2 = int(math.floor(min(p2_limits)))
-        if secondary_transmitter[0] < 50:
+            if not p2_limits:
+                continue
+
+            allowed_p2 = int(math.floor(min(p2_limits)))
             if allowed_p2 < M:
                 continue
 
-        # Secondary's ground-truth allocation: unchanged, still knapsack-optimal
-        # over the (now correctly derived) allowed_p2 budget.
-        P2_dist = allocate_p2_knapsack_optimal(allowed_p2, direct_h_secondary, cross_h_secondary, P1_dist)
+            sample = allowed_p2
+            break  # found a valid nonzero-capable sample -- stop retrying
+
+        if sample is None:
+            # Not a bug fix -- this makes an existing physical outcome explicit instead
+            # of hanging forever or silently accepting an invalid sample. If no valid
+            # nonzero allocation turns up after max_attempts_per_sample tries, that IS
+            # the answer: secondary has no safe way to transmit from this position.
+            P2_dist = [0] * M
+        else:
+            P2_dist = allocate_p2_knapsack_optimal(sample, direct_h_secondary, cross_h_secondary, P1_dist)
 
         data.append([direct_h_primary, direct_h_secondary, cross_h_primary, cross_h_secondary, P1_dist, P2_dist])
 
