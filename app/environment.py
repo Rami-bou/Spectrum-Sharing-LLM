@@ -398,4 +398,4 @@ def gen_channels(length):
 
 data = gen_channels(190)
 train = data[:70]
-test = data[90:100]
+test = data[90:]
